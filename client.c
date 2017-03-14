@@ -39,11 +39,6 @@ int main(int argc, char* argv[]) {
     // Buffer
     char buffer[PACKET_SIZE]; // message buffer
 
-    // Packets
-    struct packet packetReceive;
-    struct packet packetRequest;
-    struct packet packetSend;
-
     // Validate args
     if (argc != 4) {
          fprintf(stderr, "Usage: %s <hostname> <port> <filename>\n", argv[0]);
@@ -73,37 +68,11 @@ int main(int argc, char* argv[]) {
     serv_addr.sin_port = htons(portno);
     servlen = sizeof(serv_addr);
 
-    // 3-Way Handshake
-    // Send SYN
-    struct packet syn;
-    SYN.type = 2;
-    SYN.SEQ = 0;
-    if (sendto(sockfd, &SYN, sizeof(SYN), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
-        error("ERROR: Could not initiate 3-way handshake\n");
-
-    // Receive SYN-ACK
-    while (1) {
-        bzero((char *) &packetReceive, sizeof(packetReceive));
-        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &serv_addr, (socklen_t *) &servlen == RC_ERROR))
-            error("ERROR: SYN-ACK packet lost\n");
-        else {
-            if (packetReceive.type == 1 && packetReceive.ACK == -1)
-                break;
-            else
-                error("ERROR: ERROR: Could not receive SYN-ACK packet\n");
-        }
+    if ((sendto(sockfd, filename, strlen(filename), 0, server->h_addr, server->h_length)) == RC_ERROR) {
+        printf("h_addr: %s\n", server->h_addr);
+        printf("sockfd: %d\nfilename: %s\nstrlen(filename): %d\n servlen: %d\n", sockfd, filename, strlen(filename), servlen);
+        error("ERROR: Failed to send filename.\n");
     }
-
-    // Send ACK
-    // Send request packet
-    packetRequest.type = 4;
-    packetRequest.SEQ = 0;
-    packetRequest.ACK = -1;
-    packetRequest.size = strlen(filename);
-    strcpy(packetRequest.data, filename);
-
-    if (sendto(sockfd, &packetRequest, sizeof(packetRequest), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
-        error("ERROR: Could not send request packet\n");
 
     return RC_SUCCESS;
 }

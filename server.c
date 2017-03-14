@@ -68,6 +68,7 @@ int main(int argc, char* argv[]) {
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == RC_ERROR)
         error("ERROR: Could not open socket\n");
 
+
     // This is to prevent "Error: Address already in use"
     opt = 1;
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const void *) &opt, sizeof(int));
@@ -82,35 +83,17 @@ int main(int argc, char* argv[]) {
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) == RC_ERROR)
         error("ERROR: Could not bind\n");
 
+    printf("Server listening on port %d!\n", portno);
+
     clilen = sizeof(cli_addr);
     while (1) {
         // Receive packet from the client
         if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
             error("ERROR: Could not receive packet\n");
 
-        // 3-Way Handshake
-        // Receive SYN
-        if (packetReceive.type == 2) {
-            fprintf(stdout, "Received SYN packet\n");
-            bzero((char *) &packetSend, sizeof(packetSend));
-            packetSend.type = 1;
-            packetSend.SEQ = 0;
-            packetSend.ACK = -1;
-
-            // Send SYN-ACK
-            if (sendto(sockfd, &packetSend, sizeof(packetSend), 0, (struct sockaddr *) &cli_addr, clilen) == RC_ERROR)
-                error("ERROR: Could not send SYN-ACK\n");
-        }
-
-        // Receive reqeust packet
-        if (packetReceive.type == 4 && packetReceive.ACK == -1) {
-            filename = packetReceive.data;
-            fprintf(stdout, "Received request packet for file %s\n", filename);
-        }
-
         // Open the file
-        fp = fopen(filename, "rb"); // using rb because we're not only opening text files
-        if (fp == NULL)
+        // using rb because we're not only opening text files
+        if ((fp = fopen(filename, "rb")) == NULL)
             error("ERROR: Could not open file\n");
 
         // Get filesize
