@@ -42,13 +42,22 @@ int main(int argc, char* argv[]) {
 
     // Buffer
     char* buffer; // buffer
+
+    // Connection
+    int connection = 1;
     
     // Packets
     struct packet packetReceive;
     struct packet packetSend;
+    struct packet packetFIN;
     int total;
     int packets;
     int remainder;
+
+    // Current
+    int cur = 0;
+    int cur_seq = 0;
+    int cur_pos = 0;
 
     // File stuff
     char* filename; // file name to open
@@ -83,34 +92,37 @@ int main(int argc, char* argv[]) {
         error("ERROR: Could not bind\n");
 
     clilen = sizeof(cli_addr);
-    while (1) {
+    while (connection) {
+        // 3-Way Handshake
         // Receive packet from the client
         if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
-            error("ERROR: Could not receive packet\n");
-
-        // 3-Way Handshake
+            error("ERROR: Could not receive SYN packet\n");
         // Receive SYN
-        if (packetReceive.type == 2) {
+        if (packetReceive.type == 's') {
             fprintf(stdout, "Received SYN packet\n");
             bzero((char *) &packetSend, sizeof(packetSend));
-            packetSend.type = 1;
+            packetSend.type = 'a';
             packetSend.SEQ = 0;
             packetSend.ACK = -1;
 
             // Send SYN-ACK
             if (sendto(sockfd, &packetSend, sizeof(packetSend), 0, (struct sockaddr *) &cli_addr, clilen) == RC_ERROR)
                 error("ERROR: Could not send SYN-ACK\n");
+            else
+                printf("Sent SYN-ACK packet\n");
         }
-
-        // Receive reqeust packet
-        if (packetReceive.type == 4 && packetReceive.ACK == -1) {
+        // Receive ACK
+        // Receive request packet from the client
+        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
+            error("ERROR: Could not receive request packet\n");
+        if (packetReceive.type == 'r' && packetReceive.ACK == -1) {
             filename = packetReceive.data;
             fprintf(stdout, "Received request packet for file %s\n", filename);
         }
 
         // Open the file
-        fp = fopen(filename, "rb"); // using rb because we're not only opening text files
-        if (fp == NULL)
+        fp = fopen(filename, "rb"); // Using rb because we're not only opening text files
+        if (fp  == NULL)
             error("ERROR: Could not open file\n");
 
         // Get filesize
@@ -128,8 +140,42 @@ int main(int argc, char* argv[]) {
         if (remainder == 0)
             total = packets;
         else
-            total = packets+1;     
+            total = packets+1;
+
+        // // Communication with client
+        // while(cur < total) {
+
+        // }
+
+        // 3-Way Handshake
+        // Receive packet from the client
+        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
+            error("ERROR: Could not receive FIN packet\n");
+        // Receive FIN
+        if (packetReceive.type == 'f') {
+            fprintf(stdout, "Received FIN packet\n");
+            bzero((char *) &packetSend, sizeof(packetSend));
+            packetSend.type = 'f';
+            packetSend.SEQ = cur_seq;
+            packetSend.ACK = -1;
+            connection = 0;
+
+            // Send FIN-ACK
+            if (sendto(sockfd, &packetSend, sizeof(packetSend), 0, (struct sockaddr *) &cli_addr, clilen) == RC_ERROR)
+                error("ERROR: Could not send FIN-ACK\n");
+            else
+                fprintf(stdout, "Sent FIN-ACK packet\n");
+        }
+        // Receive ACK
+        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
+            error("ERROR: Could not receive ACK packet\n");
+        else
+            fprintf(stdout, "Received ACK packet\n");
     }
+
+    fprintf(stdout, "Connection closed\n");
+    fclose(fp);
+    close(sockfd);
 
     return RC_SUCCESS;
 }

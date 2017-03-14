@@ -2,15 +2,16 @@
 
 struct packet {
     /* type of packet
-        0 - DATA
-        1 - ACK
-        2 - SYN
-        3 - FIN
-        4 - REQUEST
+        d - DATA
+        a - ACK
+        s - SYN
+        f - FIN
+        r - REQUEST
     */
-    int type;
-    int SEQ; // sequence number flag
-    int ACK; // ack number flag
+    char type;
+    int RET; // 
+    int SEQ; // sequence number
+    int ACK; // ack number
     int size; // size of packet
     char data[PACKET_SIZE]; // data contained in packet
 };

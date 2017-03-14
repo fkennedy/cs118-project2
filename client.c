@@ -29,7 +29,6 @@ int main(int argc, char* argv[]) {
     int sockfd; // socket
     int portno; // port number to listen on
     char* hostname; // hostname
-    char* filename; // filename
 
     // Server
     struct sockaddr_in serv_addr; // server's address
@@ -39,10 +38,21 @@ int main(int argc, char* argv[]) {
     // Buffer
     char buffer[PACKET_SIZE]; // message buffer
 
+    // Handshake
+    int handshake = 1;
+
     // Packets
     struct packet packetReceive;
     struct packet packetRequest;
     struct packet packetSend;
+    struct packet SYN;
+    struct packet FIN;
+    struct packet ACK;
+
+    // File stuff
+    char* filename; // filename argument
+    FILE* fp;
+    char* fw = "data.log";
 
     // Validate args
     if (argc != 4) {
@@ -75,28 +85,31 @@ int main(int argc, char* argv[]) {
 
     // 3-Way Handshake
     // Send SYN
-    struct packet syn;
-    SYN.type = 2;
+    SYN.type = 's';
     SYN.SEQ = 0;
     if (sendto(sockfd, &SYN, sizeof(SYN), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
-        error("ERROR: Could not initiate 3-way handshake\n");
+        error("ERROR: Could not initiate 3-Way Handshake (SYN-ACK)\n");
+    else
+        fprintf(stdout, "Sent SYN packet\n");
 
     // Receive SYN-ACK
-    while (1) {
+    while (handshake) {
         bzero((char *) &packetReceive, sizeof(packetReceive));
-        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &serv_addr, (socklen_t *) &servlen == RC_ERROR))
+        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &serv_addr, (socklen_t *) &servlen) == RC_ERROR)
             error("ERROR: SYN-ACK packet lost\n");
         else {
-            if (packetReceive.type == 1 && packetReceive.ACK == -1)
-                break;
+            if (packetReceive.type == 'a' && packetReceive.ACK == -1) {
+                fprintf(stdout, "Received SYN-ACK packet\n");
+                handshake = 0;
+            }
             else
-                error("ERROR: ERROR: Could not receive SYN-ACK packet\n");
+                error("ERROR: Could not receive SYN-ACK packet\n");
         }
     }
 
     // Send ACK
     // Send request packet
-    packetRequest.type = 4;
+    packetRequest.type = 'r';
     packetRequest.SEQ = 0;
     packetRequest.ACK = -1;
     packetRequest.size = strlen(filename);
@@ -104,6 +117,46 @@ int main(int argc, char* argv[]) {
 
     if (sendto(sockfd, &packetRequest, sizeof(packetRequest), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
         error("ERROR: Could not send request packet\n");
+    else
+        fprintf(stdout, "Sent request packet\n");
+
+    fp = fopen(fw, "wb"); // Using wb because we're not only opening text files
+    if (fp == NULL)
+        error("ERROR: Could not open write-to file\n");
+
+    // // Communication with server
+    // while(1) {
+        
+    // }
+
+    // 3-Way Handshake
+    // Send FIN
+    handshake = 1;
+    FIN.type = 'f';
+    if (sendto(sockfd, &FIN, sizeof(FIN), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
+        error("ERROR: Could not initiate 3-Way Handshake (FIN-ACK)\n");
+    else
+        fprintf(stdout, "Sent FIN packet\n");
+    // Receive FIN-ACK
+    while (handshake) {
+        bzero((char *) &packetReceive, sizeof(packetReceive));
+        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &serv_addr, (socklen_t *) &servlen) == RC_ERROR)
+            error("ERROR: FIN-ACK packet lost\n");
+        else {
+            if (packetReceive.type == 'f' && packetReceive.ACK == -1) {
+                fprintf(stdout, "Received FIN-ACK packet\n");
+                handshake = 0;
+            }
+            else
+                error("ERROR: Could not receive FIN-ACK packet\n");
+        }
+    }
+    // Send ACK
+    // Send request packet
+    ACK.type = 'a';
+    if (sendto(sockfd, &ACK, sizeof(ACK), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
+        error("ERROR: Could not send ACK packet\n");
+    fprintf(stdout, "ACK packet sent\n");
 
     return RC_SUCCESS;
 }
