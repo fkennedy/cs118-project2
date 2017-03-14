@@ -111,6 +111,10 @@ int main(int argc, char* argv[]) {
         //     total = packets+1;     
     }
 
+    fprintf(stdout, "Connection closed\n");
+    fclose(fp);
+    close(sockfd);
+
     return RC_SUCCESS;
 }
 

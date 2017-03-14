@@ -25,24 +25,24 @@ void error(char * msg);
 
 // Main
 int main(int argc, char* argv[]) {
+    // Validate args
+    if (argc != 4) {
+         fprintf(stderr, "Usage: %s <hostname> <port> <filename>\n", argv[0]);
+         exit(RC_SUCCESS);
+    }
+
     // Declare variables
     int rc; // return code
     int sockfd; // socket
     char* portno; // port number to listen on
     char* hostname; // hostname
-    char* filename; // filename
+    char* filename;
 
     // Server
     struct sockaddr_in serverinfo;
 
     // Buffer
     char buffer[PACKET_SIZE]; // message buffer
-
-    // Validate args
-    if (argc != 4) {
-         fprintf(stderr, "Usage: %s <hostname> <port> <filename>\n", argv[0]);
-         exit(RC_SUCCESS);
-    }
 
     // Get host name
     hostname = argv[1];
