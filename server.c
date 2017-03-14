@@ -19,12 +19,19 @@
 #define WINDOW_SIZE 5120
 #define TIME_OUT    500
 #define HEADER_SIZE 20
+#define BUFFER_LEN  1024
 
 // Function headers
 void error(char* msg);
 
 // Main
 int main(int argc, char* argv[]) {
+    // Validate args
+    if (argc != 2) {
+        fprintf(stderr,"Usage: %s <port>\n", argv[0]);
+        exit(RC_EXIT);
+    }
+
     // Declare variables
     int sockfd; // socket
     int portno; // port number to listen on
@@ -41,25 +48,19 @@ int main(int argc, char* argv[]) {
     char *hostaddr; // client host address in dotted-decimal notation (IP address)
 
     // Buffer
-    char* buffer; // buffer
+    char buffer[BUFFER_LEN]; // buffer
     
     // Packets
-    struct packet packetReceive;
-    struct packet packetSend;
-    int total;
-    int packets;
-    int remainder;
+    // struct packet packetReceive;
+    // struct packet packetSend;
+    // int total;
+    // int packets;
+    // int remainder;
 
-    // File stuff
+    // File vars
     char* filename; // file name to open
     FILE* fp;
     long filesize;
-
-    // Validate args
-    if (argc != 2) {
-        fprintf(stderr,"Usage: %s <port>\n", argv[0]);
-        exit(RC_EXIT);
-    }
 
     // Get port number
     portno = atoi(argv[1]);
@@ -67,7 +68,6 @@ int main(int argc, char* argv[]) {
     // Create parent socket
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == RC_ERROR)
         error("ERROR: Could not open socket\n");
-
 
     // This is to prevent "Error: Address already in use"
     opt = 1;
@@ -86,9 +86,10 @@ int main(int argc, char* argv[]) {
     printf("Server listening on port %d!\n", portno);
 
     clilen = sizeof(cli_addr);
+
     while (1) {
         // Receive packet from the client
-        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
+        if (recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
             error("ERROR: Could not receive packet\n");
 
         // Open the file
@@ -101,17 +102,13 @@ int main(int argc, char* argv[]) {
         filesize = ftell(fp);
         fseek(fp, 0, SEEK_SET);
 
-        // Store data into buffer
-        buffer = malloc(sizeof(char) * filesize);
-        fread(buffer, 1, filesize, fp);
-
-        // Determine number of packets (for large files)
-        packets = filesize/PACKET_SIZE;
-        remainder = filesize%PACKET_SIZE;
-        if (remainder == 0)
-            total = packets;
-        else
-            total = packets+1;     
+        // // Determine number of packets (for large files)
+        // packets = filesize/PACKET_SIZE;
+        // remainder = filesize%PACKET_SIZE;
+        // if (remainder == 0)
+        //     total = packets;
+        // else
+        //     total = packets+1;     
     }
 
     return RC_SUCCESS;

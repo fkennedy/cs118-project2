@@ -26,15 +26,14 @@ void error(char * msg);
 // Main
 int main(int argc, char* argv[]) {
     // Declare variables
+    int rc; // return code
     int sockfd; // socket
-    int portno; // port number to listen on
+    char* portno; // port number to listen on
     char* hostname; // hostname
     char* filename; // filename
 
     // Server
-    struct sockaddr_in serv_addr; // server's address
-    int servlen; // byte size of server's address
-    struct hostent *server; // server host info
+    struct sockaddr_in serverinfo;
 
     // Buffer
     char buffer[PACKET_SIZE]; // message buffer
@@ -52,26 +51,19 @@ int main(int argc, char* argv[]) {
     // Get file name
     filename = argv[3];
 
-    // Create parent socket
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == RC_ERROR)
-        error("ERROR: Could not open socket\n");
+    // Set server info
+    memset(&serverinfo, 0, sizeof serverinfo);
+    serverinfo.sin_family = AF_INET;
+    serverinfo.sin_port = htons(portno);
+    serverinfo.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    // Get host by name
-    server = gethostbyname(hostname);
-    if (server == NULL)
-        error("ERROR: Could not find host\n");
+    // Create a socket
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == RC_ERROR)
+        error("ERROR: could not create a socket.");
 
-    // Build server's internet address
-    bzero((char *) &serv_addr, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    bcopy((char*) server->h_addr, (char*) &serv_addr.sin_addr.s_addr, server->h_length);
-    serv_addr.sin_port = htons(portno);
-    servlen = sizeof(serv_addr);
-
-    if ((sendto(sockfd, filename, strlen(filename), 0, server->h_addr, server->h_length)) == RC_ERROR) {
-        printf("h_addr: %s\n", server->h_addr);
-        printf("sockfd: %d\nfilename: %s\nstrlen(filename): %d\n servlen: %d\n", sockfd, filename, strlen(filename), servlen);
-        error("ERROR: Failed to send filename.\n");
+    // Send file name
+    if ((sendto(sockfd, filename, strlen(filename), 0, &serverinfo, sizeof(serverinfo))) == RC_ERROR) {
+        error("ERROR: Failed to send filename.");
     }
 
     return RC_SUCCESS;
@@ -80,5 +72,5 @@ int main(int argc, char* argv[]) {
 // Helper functions
 void error(char *msg) {
     perror(msg);
-    exit(RC_SUCCESS);
+    exit(RC_ERROR);
 }

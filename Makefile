@@ -1,4 +1,4 @@
-CC = gcc
+CC = gcc -g
 REMOVE = rm -rf
 
 .SILENT:
