@@ -55,7 +55,9 @@ int main(int argc, char* argv[]) {
     memset(&serverinfo, 0, sizeof serverinfo);
     serverinfo.sin_family = AF_INET;
     serverinfo.sin_port = htons(portno);
-    serverinfo.sin_addr.s_addr = inet_addr("127.0.0.1");
+    
+    if ((inet_aton("127.0.0.1", &serverinfo.sin_addr.s_addr)) == 0)
+        error("ERROR: could not convert addr");
 
     // Create a socket
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == RC_ERROR)
