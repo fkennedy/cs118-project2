@@ -7,25 +7,18 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include "packet.h"
 
 // Return codes
-#define RC_SUCCESS  1
+#define RC_SUCCESS  0
+#define RC_EXIT     1
 #define RC_ERROR    -1
 
 // Constants
-#define BUFFER_SIZE 1024
-#define PACKET_SIZE 1024
 #define MAX_SEQ_NO  30720
 #define WINDOW_SIZE 5120
 #define TIME_OUT    500
-
-// Packet structure
-struct packet {
-    int seq;
-    int ack;
-    int size;
-    char data[PACKET_SIZE];
-};
+#define HEADER_SIZE 20
 
 // Function headers
 void error(char * msg);
@@ -35,24 +28,27 @@ int main(int argc, char* argv[]) {
     // Declare variables
     int sockfd; // socket
     int portno; // port number to listen on
-    struct sockaddr_in serv_addr; // server's address
-    int servlen; // byte size of server's address
     char* hostname; // hostname
     char* filename; // filename
+
+    // Server
+    struct sockaddr_in serv_addr; // server's address
+    int servlen; // byte size of server's address
     struct hostent *server; // server host info
-    char buffer[BUFFER_SIZE]; // message buffer
+
+    // Buffer
+    char buffer[PACKET_SIZE]; // message buffer
+
+    // Packets
+    struct packet packetReceive;
+    struct packet packetRequest;
+    struct packet packetSend;
 
     // Validate args
-    if (argc != 3) {
-         fprintf(stderr, "Usage: %s <hostname> <port>\n", argv[0]);
+    if (argc != 4) {
+         fprintf(stderr, "Usage: %s <hostname> <port> <filename>\n", argv[0]);
          exit(RC_SUCCESS);
     }
-
-    // Validate args
-    // if (argc != 4) {
-    //      fprintf(stderr, "Usage: %s <hostname> <port> <filename>\n", argv[0]);
-    //      exit(RC_SUCCESS);
-    // }
 
     // Get host name
     hostname = argv[1];
@@ -75,20 +71,39 @@ int main(int argc, char* argv[]) {
     serv_addr.sin_family = AF_INET;
     bcopy((char*) server->h_addr, (char*) &serv_addr.sin_addr.s_addr, server->h_length);
     serv_addr.sin_port = htons(portno);
-
     servlen = sizeof(serv_addr);
-    // Send a message to the server
-    memset(buffer, 0, BUFFER_SIZE);
-    fprintf(stdout, "Enter message: ");
-    fgets(buffer, BUFFER_SIZE, stdin);
-    if (sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
-        error("ERROR: Could not send message\n");
 
-    // Receive message from the server
-    memset(buffer, 0, BUFFER_SIZE);
-    if (recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr *) &serv_addr, (socklen_t *) &servlen) == RC_ERROR)
-        error("ERROR: Could not receive message\n");
-    fprintf(stdout, "Message: %s\n", buffer);
+    // 3-Way Handshake
+    // Send SYN
+    struct packet syn;
+    SYN.type = 2;
+    SYN.SEQ = 0;
+    if (sendto(sockfd, &SYN, sizeof(SYN), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
+        error("ERROR: Could not initiate 3-way handshake\n");
+
+    // Receive SYN-ACK
+    while (1) {
+        bzero((char *) &packetReceive, sizeof(packetReceive));
+        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &serv_addr, (socklen_t *) &servlen == RC_ERROR))
+            error("ERROR: SYN-ACK packet lost\n");
+        else {
+            if (packetReceive.type == 1 && packetReceive.ACK == -1)
+                break;
+            else
+                error("ERROR: ERROR: Could not receive SYN-ACK packet\n");
+        }
+    }
+
+    // Send ACK
+    // Send request packet
+    packetRequest.type = 4;
+    packetRequest.SEQ = 0;
+    packetRequest.ACK = -1;
+    packetRequest.size = strlen(filename);
+    strcpy(packetRequest.data, filename);
+
+    if (sendto(sockfd, &packetRequest, sizeof(packetRequest), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
+        error("ERROR: Could not send request packet\n");
 
     return RC_SUCCESS;
 }
