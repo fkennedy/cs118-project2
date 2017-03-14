@@ -9,23 +9,34 @@
 ### Files
 * server.c - C source code for server
 * client.c - C source code for client
+* packet.h - Header file for a packet
 
-### Running the program
-```
+### Building the program
 To build the server and client programs:
+```
     make
 ```
-```
 To build the server program:
+```
     make server
 ```
-```
 To build the client program:
+```
     make client
 ```
+To clean up the directory:
 ```
-To clean up the director:
     make clean
+```
+
+### Running the program
+To run the server:
+```
+    ./server <port number>
+```
+To run the client:
+```
+    ./client <port number> <host name> <file name>
 ```
 
 ## Notes
