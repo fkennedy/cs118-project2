@@ -92,6 +92,10 @@ int main(int argc, char* argv[]) {
         if (recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
             error("ERROR: Could not receive packet\n");
 
+        printf("%s", buffer);
+        filename = (char *) malloc(strlen(buffer)+1);
+        strcpy(filename, buffer);
+
         // Open the file
         // using rb because we're not only opening text files
         if ((fp = fopen(filename, "rb")) == NULL)
