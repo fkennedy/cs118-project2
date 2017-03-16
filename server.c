@@ -7,7 +7,6 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-#include "packet.h"
 
 // Return codes
 #define RC_SUCCESS  0
@@ -47,16 +46,6 @@ int main(int argc, char* argv[]) {
     struct hostent *client; // client host info
     char *hostaddr; // client host address in dotted-decimal notation (IP address)
 
-    // Buffer
-    char buffer[BUFFER_LEN]; // buffer
-    
-    // Packets
-    // struct packet packetReceive;
-    // struct packet packetSend;
-    // int total;
-    // int packets;
-    // int remainder;
-
     // File vars
     char* filename; // file name to open
     FILE* fp;
@@ -87,32 +76,33 @@ int main(int argc, char* argv[]) {
 
     clilen = sizeof(cli_addr);
 
-    while (1) {
-        // Receive packet from the client
-        if (recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
-            error("ERROR: Could not receive packet\n");
+    // Receive packet from the client
+    if (recvfrom(sockfd, filename, sizeof(filename), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
+        error("ERROR: Could not receive packet\n");
 
-        printf("%s", buffer);
-        filename = (char *) malloc(strlen(buffer)+1);
-        strcpy(filename, buffer);
+    printf("\nFile Requested: %s\n", filename);
+    filename = (char *) malloc(strlen(filename)+1);
+    strcpy(filename, filename);
 
-        // Open the file
-        // using rb because we're not only opening text files
-        if ((fp = fopen(filename, "rb")) == NULL)
-            error("ERROR: Could not open file\n");
+    // Open the file
+    // using rb because we're not only opening text files
+    if ((fp = fopen(filename, "rb")) == NULL)
+        error("ERROR: Could not open file\n");
 
-        // Get filesize
-        fseek(fp, 0, SEEK_END);
-        filesize = ftell(fp);
-        fseek(fp, 0, SEEK_SET);
+    // Get filesize
+    fseek(fp, 0, SEEK_END);
+    filesize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
 
-        // // Determine number of packets (for large files)
-        // packets = filesize/PACKET_SIZE;
-        // remainder = filesize%PACKET_SIZE;
-        // if (remainder == 0)
-        //     total = packets;
-        // else
-        //     total = packets+1;     
+    // Headers
+    int fin = 0;
+    int ack = 0;
+    int ackChecksum = 0;
+    int datasize = 0;
+    int expectedSeqNum = 0;
+
+    while (!fin) {
+
     }
 
     fprintf(stdout, "Connection closed\n");
