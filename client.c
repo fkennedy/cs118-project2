@@ -22,8 +22,12 @@
 
 // Function headers
 void error(char * msg);
+
+ssize_t sendtowithheaders(int sockfd, const void *buf, size_t len, int flags,
+               const struct sockaddr *dest_addr, socklen_t addrlen);
+
 int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags, 
-        struct sockaddr *src_addr, socklen_t *addrlen, char* fileBuffer, int* ack, int* fin, int* expectedSeqNum, int* ackChecksum, int* datasize);
+        struct sockaddr *src_addr, socklen_t *addrlen, char* fileBuffer, int* ack, int* fin, int* seqNum, int* ackChecksum, int* datasize);
 
 // Main
 int main(int argc, char* argv[]) {
@@ -85,12 +89,39 @@ int main(int argc, char* argv[]) {
 
     while (!fin) {
         if ((numBytesReceived = recvfromwithheaders(sockfd, fileBuffer, PACKET_SIZE, 0, 
-                (struct sockaddr *) &serverinfo, &servlen, fileBuffer, &ack, &fin, &ackChecksum, &datasize, &expectedSeqNum)) == RC_ERROR)
-            error("ERROR: receiving packet.");
+                (struct sockaddr *) &serverinfo, &servlen, fileBuffer, &ack, &fin, &ackChecksum, &datasize, &seqNum)) <= 0)
+            error("ERROR: data is empty.");
 
-        printf("%s\n", fileBuffer);
-    
-        expectedSeqNum += PACKET_SIZE;
+        printf("\nFile Received: %s\n", fileBuffer);
+        
+        // File does not exist
+        // TODO
+
+        // Finished
+        if (fin) {
+            if ((sendtowithheaders(sockfd, filename, strlen(filename), 0, (const struct sockaddr *) &serverinfo, servlen,
+                    &ack, &fin, &expectedSeqNum, &ackChecksum)) == RC_ERROR)
+                error("ERROR: sending response to server.");
+        }
+
+        // Received a packet out of order
+        else if (seqNum < expectedSeqNum - PACKET_SIZE || seqNum > expectedSeqNum) {
+            fprintf(stderr, "Received a packet out of order, ignoring.\n");
+            fin = 0;
+        }
+
+        // Packet received normally
+        else {
+            if ((sendtowithheaders(sockfd, filename, strlen(filename), 0, (const struct sockaddr *) &serverinfo, servlen,
+                    &ack, &fin, &expectedSeqNum, &ackChecksum)) == RC_ERROR)
+                error("ERROR: sending ACK to server.");
+
+            expectedSeqNum += PACKET_SIZE;
+        }
+
+        // Write fileBuffer to file
+        if (fwrite(fileBuffer, sizeof(char), datasize, fp) < 0)
+            error("ERROR: could not write to file.");
     }
 
     close(sockfd);
@@ -104,8 +135,42 @@ void error(char *msg) {
     exit(RC_ERROR);
 }
 
+ssize_t sendtowithheaders(int sockfd, const void *buf, size_t len, int flags,
+               const struct sockaddr *dest_addr, socklen_t addrlen, int* ack, int* fin, int* seqNum, int* ackChecksum, int* datasize) {
+
+    // Packet stucture: 
+    // | ack | fin | seqNum | ackChecksum | datasize | fileBuffer |
+
+    char packetBuffer[PACKET_SIZE];
+    char* traverse = packetBuffer;
+    int traverseIndex = 0;
+
+    datasize = strlen(buf);
+    ackChecksum = ~ack;
+
+    memcpy(traverse + traverseIndex, &ack, sizeof(ack));
+    traverseIndex += sizeof(ack);   
+
+    memcpy(traverse + traverseIndex, &fin, sizeof(fin));
+    traverseIndex += sizeof(fin);   
+
+    memcpy(traverse + traverseIndex, &seqNum, sizeof(seqNum));
+    traverseIndex += sizeof(seqNum);   
+
+    memcpy(traverse + traverseIndex, &ackChecksum, sizeof(ackChecksum));
+    traverseIndex += sizeof(ackChecksum);   
+
+    memcpy(traverse + traverseIndex, &datasize, sizeof(datasize));
+    traverseIndex += sizeof(datasize); 
+
+    memcpy(traverse + traverseIndex, &buf, sizeof(buf));
+    traverseIndex += sizeof(buf);   
+
+    return *datasize;  
+}
+
 int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags, 
-        struct sockaddr *src_addr, socklen_t *addrlen, char* fileBuffer, int* ack, int* fin, int* expectedSeqNum, int* ackChecksum, int* datasize) {
+        struct sockaddr *src_addr, socklen_t *addrlen, char* fileBuffer, int* ack, int* fin, int* seqNum, int* ackChecksum, int* datasize) {
     
     int numBytesReceived;
     int traverseIndex = 0;
@@ -118,7 +183,7 @@ int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags,
     printf("HERE2");
 
     // Packet stucture: 
-    // | ack | fin | expectedSeqNum | ackChecksum | datasize | fileBuffer |
+    // | ack | fin | seqNum | ackChecksum | datasize | fileBuffer |
 
     char* traverse = buf;
 
@@ -128,8 +193,8 @@ int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags,
     memcpy(&fin, traverse + traverseIndex, sizeof(fin));
     traverseIndex += sizeof(fin);
 
-    memcpy(&expectedSeqNum, traverse + traverseIndex, sizeof(expectedSeqNum));
-    traverseIndex += sizeof(expectedSeqNum);
+    memcpy(&seqNum, traverse + traverseIndex, sizeof(seqNum));
+    traverseIndex += sizeof(seqNum);
 
     memcpy(&ackChecksum, traverse + traverseIndex, sizeof(ackChecksum));
     traverseIndex += sizeof(ackChecksum);
@@ -137,8 +202,8 @@ int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags,
     memcpy(&datasize, traverse + traverseIndex, sizeof(datasize));
     traverseIndex += sizeof(datasize);
 
-    memcpy(&expectedSeqNum, traverse + traverseIndex, sizeof(expectedSeqNum));
-    traverseIndex += sizeof(expectedSeqNum);
+    memcpy(&seqNum, traverse + traverseIndex, sizeof(seqNum));
+    traverseIndex += sizeof(seqNum);
 
     memcpy(&fileBuffer, traverse + traverseIndex, sizeof(datasize));
 
