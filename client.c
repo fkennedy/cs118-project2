@@ -93,6 +93,8 @@ int main(int argc, char* argv[]) {
         expectedSeqNum += PACKET_SIZE;
     }
 
+    close(sockfd);
+
     return RC_SUCCESS;
 }
 

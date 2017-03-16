@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) {
 
     // Client
     struct sockaddr_in cli_addr; // client's address
-    int clilen; // byte size of client's address
+    socklen_t clilen = sizeof(cli_addr); // byte size of client's address
     struct hostent *client; // client host info
     char *hostaddr; // client host address in dotted-decimal notation (IP address)
 
@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
     // Get server address
     bzero((char *) &serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(portno);
 
     // Bind socket
@@ -74,25 +74,21 @@ int main(int argc, char* argv[]) {
 
     printf("Server listening on port %d!\n", portno);
 
-    clilen = sizeof(cli_addr);
-
     // Receive packet from the client
-    if (recvfrom(sockfd, filename, sizeof(filename), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
+    if ((recvfrom(sockfd, filename, sizeof(filename), 0, (struct sockaddr *) &cli_addr, &clilen)) == RC_ERROR)
         error("ERROR: Could not receive packet\n");
 
     printf("\nFile Requested: %s\n", filename);
-    filename = (char *) malloc(strlen(filename)+1);
-    strcpy(filename, filename);
 
     // Open the file
     // using rb because we're not only opening text files
-    if ((fp = fopen(filename, "rb")) == NULL)
-        error("ERROR: Could not open file\n");
+    // if ((fp = fopen(filename, "rb")) == NULL)
+    //     error("ERROR: Could not open file\n");
 
-    // Get filesize
-    fseek(fp, 0, SEEK_END);
-    filesize = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
+    // // Get filesize
+    // fseek(fp, 0, SEEK_END);
+    // filesize = ftell(fp);
+    // fseek(fp, 0, SEEK_SET);
 
     // Headers
     int fin = 0;
@@ -102,7 +98,6 @@ int main(int argc, char* argv[]) {
     int expectedSeqNum = 0;
 
     while (!fin) {
-
     }
 
     fprintf(stdout, "Connection closed\n");
