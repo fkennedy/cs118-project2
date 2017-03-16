@@ -1,3 +1,5 @@
 server
 client
 data.log
+*.o
+*.dSYM

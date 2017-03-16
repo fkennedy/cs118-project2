@@ -1,16 +1,19 @@
 CC = gcc
+CFLAGS = -g
 REMOVE = rm -rf
 
 .SILENT:
 
 default: server client
 
-server: server.c
-	$(CC) server.c -o server
+server: server.o
+	$(CC) $(CFLAGS) server.c helper.c -o server
 
-client: client.c
-	$(CC) client.c -o client
+client: client.o
+	$(CC) $(CFLAGS) client.c helper.c -o client
 
 clean:
 	$(REMOVE) client server
+	$(REMOVE) *.dSYM
 	$(REMOVE) *.o
+	$(REMOVE) data.log

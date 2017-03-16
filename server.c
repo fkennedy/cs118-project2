@@ -1,27 +1,4 @@
-#include <stdio.h>
-#include <sys/types.h>  // definitions of a number of data types used in socket.h and netinet/in.h
-#include <sys/socket.h> // definitions of structures needed for sockets, e.g. sockaddr
-#include <netinet/in.h> // constants and structures needed for internet domain addresses, e.g. sockaddr_in
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include "packet.h"
-
-// Return codes
-#define RC_SUCCESS  0
-#define RC_EXIT     1
-#define RC_ERROR    -1
-
-// Constants
-#define MAX_SEQ_NO  30720
-#define WINDOW_SIZE 5120
-#define TIME_OUT    500
-#define HEADER_SIZE 20
-
-// Function headers
-void error(char* msg);
+#include "helper.h"
 
 // Main
 int main(int argc, char* argv[]) {
@@ -32,37 +9,65 @@ int main(int argc, char* argv[]) {
 
     // Server
     struct sockaddr_in serv_addr; // server's address
-    int servlen; // byte size of server's address
+    socklen_t servlen; // byte size of server's address
 
     // Client
     struct sockaddr_in cli_addr; // client's address
-    int clilen; // byte size of client's address
+    socklen_t clilen; // byte size of client's address
     struct hostent *client; // client host info
     char *hostaddr; // client host address in dotted-decimal notation (IP address)
-
-    // Buffer
-    char* buffer; // buffer
-
-    // Connection
-    int connection = 1;
     
-    // Packets
-    struct packet packetReceive;
-    struct packet packetSend;
-    struct packet packetFIN;
-    int total;
-    int packets;
-    int remainder;
+    // Packet
+    char buffer[PACKET_SIZE]; // buffer
+    int size = 0; // size of packet
+    int SEQ = 0; // sequence number
+    int ret = 0; // retransmission flag
+    int SYN = 0; // SYN flag
+    int FIN = 0; // FIN flag
+    unsigned int start = 0;
 
-    // Current
-    int cur = 0;
-    int cur_seq = 0;
-    int cur_pos = 0;
+    // Packet data
+    unsigned int locations[5];
+    unsigned int locations_next[5];
+    int SEQs[5];
+    int ACKs[5];
+    int ACKed[5];
+    int lengths[5];
+    struct timespec timers[5];
+
+    // Packet access
+    int cur = 0; // current packet number
+    int ACKsReceived = 0;
+    int base = 0;
+    int basefile = 0;
+    unsigned int offset;
+    int payload;
+    int payloadLen;
+    unsigned int temp;
+
+    // Time
+    int msec;
+    int oldestIndex;
+    int oldestTime;
+    struct timespec current;
+
+    // Loop/Jump flags stuff
+    int handshakeSYNACK = 1;
+    int handshakeFIN = 1;
+    int handshakeFINACK = 1;
+    int timeout = 0;
+    int i;
 
     // File stuff
-    char* filename; // file name to open
+    char filename[PACKET_SIZE]; // file name to open
     FILE* fp;
     long filesize;
+    char* data;
+
+    // Time out stuff
+    fd_set read_fds;
+    struct timeval tv;
+    int rv;
 
     // Validate args
     if (argc != 2) {
@@ -71,7 +76,10 @@ int main(int argc, char* argv[]) {
     }
 
     // Get port number
-    portno = atoi(argv[1]);
+    if (portno < 0)
+        error("ERROR: Invalid port number\n");
+    else
+        portno = atoi(argv[1]);
 
     // Create parent socket
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == RC_ERROR)
@@ -92,96 +100,291 @@ int main(int argc, char* argv[]) {
         error("ERROR: Could not bind\n");
 
     clilen = sizeof(cli_addr);
-    while (connection) {
-        // 3-Way Handshake
-        // Receive packet from the client
-        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
-            error("ERROR: Could not receive SYN packet\n");
+
+    printf("Waiting for client...\n");
+
+    // SYN/SYN-ACK Handshake
+    // Receive packet from the client
+    while (SYN != 1) {
         // Receive SYN
-        if (packetReceive.type == 's') {
-            fprintf(stdout, "Received SYN packet\n");
-            bzero((char *) &packetSend, sizeof(packetSend));
-            packetSend.type = 'a';
-            packetSend.SEQ = 0;
-            packetSend.ACK = -1;
+        if (recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
+            error("ERROR: Could not receive SYN packet\n");
+    }
+    
+    printf("Client: %s:%d\n", inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+    printf("Receiving packet %i %i SYN\n", SEQ, WINDOW_SIZE);
+    ret = 0;
 
-            // Send SYN-ACK
-            if (sendto(sockfd, &packetSend, sizeof(packetSend), 0, (struct sockaddr *) &cli_addr, clilen) == RC_ERROR)
-                error("ERROR: Could not send SYN-ACK\n");
+    // Send SYN-ACK
+    while(handshakeSYNACK) {
+        if (sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, SEQ, 1, 0, 0) == RC_ERROR)
+            error("ERROR: Could not send SYN-ACK\n");
+        else {
+            if (ret)
+                printf("Sending packet %i %i Retransmission SYN-ACK\n", SEQ, WINDOW_SIZE);
             else
-                printf("Sent SYN-ACK packet\n");
+                printf("Sending packet %i %i SYN-ACK\n", SEQ, WINDOW_SIZE);
         }
-        // Receive ACK
-        // Receive request packet from the client
-        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
+
+        // Time-out
+        FD_ZERO(&read_fds);
+        FD_SET(sockfd, &read_fds);
+
+        tv.tv_sec = 0;
+        tv.tv_usec = TIME_OUT*1000;
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
+            ret = 1;
+            continue;
+        }
+
+        if (recvFrom(sockfd, filename, (size_t *) &size, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
             error("ERROR: Could not receive request packet\n");
-        if (packetReceive.type == 'r' && packetReceive.ACK == -1) {
-            filename = packetReceive.data;
-            fprintf(stdout, "Received request packet for file %s\n", filename);
-        }
 
-        // Open the file
-        fp = fopen(filename, "rb"); // Using rb because we're not only opening text files
-        if (fp  == NULL)
-            error("ERROR: Could not open file\n");
-
-        // Get filesize
-        fseek(fp, 0, SEEK_END);
-        filesize = ftell(fp);
-        fseek(fp, 0, SEEK_SET);
-
-        // Store data into buffer
-        buffer = malloc(sizeof(char) * filesize);
-        fread(buffer, 1, filesize, fp);
-
-        // Determine number of packets (for large files)
-        packets = filesize/PACKET_SIZE;
-        remainder = filesize%PACKET_SIZE;
-        if (remainder == 0)
-            total = packets;
+        printf("File: %s\nHANDSHAKE", filename);
+        if (SYN || SEQ != 1)
+            continue;
         else
-            total = packets+1;
-
-        // // Communication with client
-        // while(cur < total) {
-
-        // }
-
-        // 3-Way Handshake
-        // Receive packet from the client
-        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
-            error("ERROR: Could not receive FIN packet\n");
-        // Receive FIN
-        if (packetReceive.type == 'f') {
-            fprintf(stdout, "Received FIN packet\n");
-            bzero((char *) &packetSend, sizeof(packetSend));
-            packetSend.type = 'f';
-            packetSend.SEQ = cur_seq;
-            packetSend.ACK = -1;
-            connection = 0;
-
-            // Send FIN-ACK
-            if (sendto(sockfd, &packetSend, sizeof(packetSend), 0, (struct sockaddr *) &cli_addr, clilen) == RC_ERROR)
-                error("ERROR: Could not send FIN-ACK\n");
-            else
-                fprintf(stdout, "Sent FIN-ACK packet\n");
-        }
-        // Receive ACK
-        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen) == RC_ERROR)
-            error("ERROR: Could not receive ACK packet\n");
-        else
-            fprintf(stdout, "Received ACK packet\n");
+            handshakeSYNACK = 0;
     }
 
-    fprintf(stdout, "Connection closed\n");
+    printf("File: %s\n", filename);
+
+    // Open the file
+    fp = fopen(filename, "rb"); // Using rb because we're not only opening text files
+    if (fp  == NULL)
+        error("ERROR: Could not open file\n");
+
+    // Get filesize
+    fseek(fp, 0, SEEK_END);
+    filesize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    // Empty file
+    if (filesize == 0)
+        error("ERROR: File is empty\n");
+
+    // Store file contents into data
+    data = malloc(filesize+1);
+    fread(data, 1, filesize, fp);
+    data[filesize] = '\0';
+
+    for (i = 0; i < 5; i++) {
+        locations[i] = 0;
+        locations_next[i] = 0;
+        SEQs[i] = -1;
+        ACKs[i] = -1;
+        ACKed[i] = -1;
+        lengths[i] = -1;
+    }
+
+    ret = 0;
+
+    while (!FIN) {
+        // Send packets in current window
+        do {
+            offset = basefile+cur+PAYLOAD_SIZE;
+            // Calculate sequence number
+            SEQ = (base+cur*PACKET_SIZE) % MAX_SEQ_NO;
+
+            payload = PAYLOAD_SIZE;
+            if (filesize-offset < PAYLOAD_SIZE)
+                payload = filesize-offset;
+
+            // Create packetSend buffer;
+            char packetSend[payload];
+            bzero(packetSend, payload);
+            memcpy(packetSend, data+offset, payload);
+            sendTo(sockfd, packetSend, payload, (struct sockaddr *) &cli_addr, clilen, SEQ, 0, 0, offset);
+            printf("Sending packet %i %i\n", SEQ, WINDOW_SIZE);
+
+            // Assign values to array
+            clock_gettime(CLOCK_MONOTONIC_RAW, &timers[cur]);
+            locations[cur] = offset;
+            locations_next[cur] = offset+payload;
+            SEQs[cur] = SEQ;
+            ACKs[cur] = (SEQ+payload+HEADER_SIZE) % MAX_SEQ_NO;
+            ACKed[cur] = -1;
+            lengths[cur] = payload;
+
+            cur++;
+        } while (offset < filesize && cur < 5);
+
+        msec = 0;
+        clock_gettime(CLOCK_MONOTONIC_RAW, &current);
+        oldestIndex = -1;
+        oldestTime = -1;
+
+        for (i = 0; i < 5; i++) {
+            if (SEQs[i] == -1 && ACKed[i] -1) {
+                msec = (current.tv_sec-timers[i].tv_sec)*1000 + (current.tv_nsec-timers[i].tv_nsec)/1000000;
+
+                if (msec > oldestTime) {
+                    oldestTime = msec;
+                    oldestIndex = i;
+                }
+            }
+        }
+
+        if (oldestTime > TIME_OUT)
+            timeout = 1;
+
+        if (timeout) {
+            // Retransmit timed out packages
+            msec = 0;
+            clock_gettime(CLOCK_MONOTONIC_RAW, &current);
+
+            for (i = 0; i < 5; i++) {
+                if (SEQs[i] != -1 && ACKed[i] == -1) {
+                    msec = (current.tv_sec-timers[i].tv_sec)*1000 + (current.tv_nsec-timers[i].tv_nsec)/1000000;
+
+                    if (msec >= TIME_OUT) {
+                        SEQ = SEQs[i];
+                        temp = locations[i];
+                        payload = lengths[i];
+
+                        char packetSend[payload];
+                        bzero(packetSend, payload);
+                        memcpy(packetSend, data+temp, payload);
+
+                        sendTo(sockfd, packetSend, payload, (struct sockaddr *) &cli_addr, clilen, SEQ, 0, 0, temp);
+                        printf("Sending packet %i %i Retransmission\n", SEQ, WINDOW_SIZE);
+
+                        // Start the timer again
+                        clock_gettime(CLOCK_MONOTONIC_RAW, &timers[i]);
+                    }
+                }
+            }
+        }
+        else {
+            int retlen, retSEQ, retSYN, retFIN;
+            recvFrom(sockfd, buffer, (size_t *) &retlen, (struct sockaddr *) &cli_addr, &clilen, &retSEQ, &retSYN, &retFIN, &start);
+            FIN = retFIN;
+            SEQ = retSEQ;
+            if (FIN) {
+                ret = 0;
+                printf("Receiving packet %i FIN", SEQ);
+                goto FINACK;
+            }
+            else
+                printf("Receiving packet %i", retSEQ);
+
+            for (i = 0; i < 5; i++) {
+                if (ACKs[i] == SEQ) {
+                    ACKed[i] = SEQ;
+                    break;
+                }
+            }
+
+            while (ACKed[0] != -1) {
+                basefile = locations[0];
+                ACKsReceived++;
+                payloadLen = lengths[0];
+                base = ACKs[0];
+                cur--;
+
+                for (i = 0; i < 4; i++) {
+                    locations[i] = locations[i+1];
+                    locations_next[i] = locations_next[i+1];
+                    SEQs[i] = SEQs[i+1];
+                    ACKs[i] = ACKs[i+1];
+                    ACKed[i] = ACKed[i+1];
+                    lengths[i] = lengths[i+1];
+                    timers[i] = timers[i+1];
+                }
+
+                locations[4] = 0;
+                locations_next[4] = 0;
+                SEQs[4] = -1;
+                ACKs[4] = -1;
+                ACKed[4] = -1;
+                lengths[4] = -1;
+            }
+
+            if (basefile >= filesize) {
+                FIN = 1;
+                sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, base, 1, FIN, 0);
+                printf("Sending packet %i %i FIN\n", base, WINDOW_SIZE);
+                ret = 0;
+            }
+
+            if (FIN)
+                break;
+        }
+    }
+
+    // Send FIN
+    while (handshakeFIN) {
+        sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, base, 1, 1, 0);
+        if (ret)
+            printf("Sending packet %i %i Retransmission FIN\n", base, WINDOW_SIZE);
+        else
+            printf("Sending packet %i %i FIN\n", base, WINDOW_SIZE);
+
+        // Time-out
+        FD_ZERO(&read_fds);
+        FD_SET(sockfd, &read_fds);
+
+        tv.tv_sec = 0;
+        tv.tv_usec = TIME_OUT*1000;
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
+            ret = 1;
+            continue;
+        }
+
+        if (recvFrom(sockfd, filename, (size_t *) &size, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
+            error("ERROR: Could not receive FIN packet\n");
+
+
+        if (FIN && SEQ == (base+HEADER_SIZE)%MAX_SEQ_NO) {
+            handshakeFIN = 0;
+            ret = 0;
+            printf("Receiving packet %i FIN\n", SEQ);
+        }
+        else
+            ret = 1;
+    }
+
+    ret = 0;
+
+FINACK:
+    // Send FIN-ACK
+    while(handshakeFINACK) {
+        int SEQnew = (base+HEADER_SIZE)%MAX_SEQ_NO;
+        sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, SEQnew, 0, 1, 0);
+        
+        if (ret)
+            printf("Sending packet %i %i Retransmission FIN-ACK\n", SEQnew, WINDOW_SIZE);
+        else
+            printf("Sending packet %i %i FIN-ACK\n", SEQnew, WINDOW_SIZE);
+
+        // Time-out
+        FD_ZERO(&read_fds);
+        FD_SET(sockfd, &read_fds);
+
+        tv.tv_sec = 0;
+        tv.tv_usec = TIME_OUT*1000;
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
+            ret = 1;
+            continue;
+        }
+
+        // Last ACK
+        recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &cli_addr, &clilen, &SEQ, &SYN, &FIN, &start);
+        if (SEQ != (SEQnew+HEADER_SIZE)%MAX_SEQ_NO)
+            continue;
+        else
+            handshakeFINACK = 0;
+    }
+
+    printf("Receiving packet %i\n", SEQ);
+    printf("Closing connection\n");
+
+    // Free variables
+    free(data);
+
+    // Close everything
     fclose(fp);
     close(sockfd);
 
     return RC_SUCCESS;
-}
-
-// Helper functions
-void error(char *msg) {
-    perror(msg);
-    exit(RC_EXIT);
 }

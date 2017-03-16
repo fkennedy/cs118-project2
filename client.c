@@ -1,69 +1,68 @@
-#include <stdio.h>
-#include <sys/types.h>  // definitions of a number of data types used in socket.h and netinet/in.h
-#include <sys/socket.h> // definitions of structures needed for sockets, e.g. sockaddr
-#include <netinet/in.h> // constants and structures needed for internet domain addresses, e.g. sockaddr_in
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include "packet.h"
-
-// Return codes
-#define RC_SUCCESS  0
-#define RC_EXIT     1
-#define RC_ERROR    -1
-
-// Constants
-#define MAX_SEQ_NO  30720
-#define WINDOW_SIZE 5120
-#define TIME_OUT    500
-#define HEADER_SIZE 20
-
-// Function headers
-void error(char * msg);
+#include "helper.h"
 
 // Main
 int main(int argc, char* argv[]) {
     // Declare variables
     int sockfd; // socket
     int portno; // port number to listen on
-    char* hostname; // hostname
+    char* hostIP = malloc(50);
 
     // Server
     struct sockaddr_in serv_addr; // server's address
-    int servlen; // byte size of server's address
+    socklen_t servlen; // byte size of server's address
     struct hostent *server; // server host info
 
-    // Buffer
-    char buffer[PACKET_SIZE]; // message buffer
+    // Packet
+    char buffer[PACKET_SIZE]; // buffer
+    int size = 0; // size of packet
+    int SEQ = 0; // sequence number
+    int ret = 0; // retransmission flag
+    int SYN = 0; // SYN flag
+    int FIN = 0; // FIN flag
+    unsigned int start = 0;
 
-    // Handshake
-    int handshake = 1;
+    // ACK
+    int * listACK = (int *) malloc(sizeof(int) * 10);
+    for (int i = 0; i < 10; i++)
+        listACK[i] = -1;
 
-    // Packets
-    struct packet packetReceive;
-    struct packet packetRequest;
-    struct packet packetSend;
-    struct packet SYN;
-    struct packet FIN;
-    struct packet ACK;
+    // While flags
+    int handshakeSYN = 1;
+    int request = 1;
+    int request_break = 0;
+    int handshakeFIN = 1;
+    int handshakeFINACK = 1;
 
     // File stuff
     char* filename; // filename argument
     FILE* fp;
     char* fw = "data.log";
 
+    // Time out stuff
+    fd_set read_fds;
+    struct timeval tv;
+    int rv;
+
     // Validate args
     if (argc != 4) {
-         fprintf(stderr, "Usage: %s <hostname> <port> <filename>\n", argv[0]);
-         exit(RC_SUCCESS);
+        fprintf(stderr, "Usage: %s <hostname> <port> <filename>\n", argv[0]);
+        exit(RC_SUCCESS);
     }
 
+    struct timespec time_start, time_end;
+
     // Get host name
-    hostname = argv[1];
+    if (strcmp(argv[1], "localhost") == 0)
+        hostIP = "127.0.0.1";
+    else
+        strcpy(hostIP, argv[1]);
+
     // Get port number
-    portno = atoi(argv[2]);
+    if (portno < 0)
+        error("ERROR: Invalid port number\n");
+    else
+        portno = atoi(argv[2]);
+
     // Get file name
     filename = argv[3];
 
@@ -71,98 +70,206 @@ int main(int argc, char* argv[]) {
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == RC_ERROR)
         error("ERROR: Could not open socket\n");
 
-    // Get host by name
-    server = gethostbyname(hostname);
-    if (server == NULL)
-        error("ERROR: Could not find host\n");
-
+    
     // Build server's internet address
     bzero((char *) &serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    bcopy((char*) server->h_addr, (char*) &serv_addr.sin_addr.s_addr, server->h_length);
     serv_addr.sin_port = htons(portno);
+    if (inet_aton(hostIP, &serv_addr.sin_addr) == 0)
+        error("ERROR: Could not inet_aton\n");
     servlen = sizeof(serv_addr);
 
-    // 3-Way Handshake
-    // Send SYN
-    SYN.type = 's';
-    SYN.SEQ = 0;
-    if (sendto(sockfd, &SYN, sizeof(SYN), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
-        error("ERROR: Could not initiate 3-Way Handshake (SYN-ACK)\n");
-    else
-        fprintf(stdout, "Sent SYN packet\n");
+    ret = 0;
 
-    // Receive SYN-ACK
-    while (handshake) {
-        bzero((char *) &packetReceive, sizeof(packetReceive));
-        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &serv_addr, (socklen_t *) &servlen) == RC_ERROR)
-            error("ERROR: SYN-ACK packet lost\n");
+    // SYN/SYN-ACK Handshake
+    while (handshakeSYN) {
+        // Send SYN
+        if (sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, 0, 1, 0 ,0) == RC_ERROR)
+            error("ERROR: Could not initiate handshake (SYN/SYN-ACK)\n");
         else {
-            if (packetReceive.type == 'a' && packetReceive.ACK == -1) {
-                fprintf(stdout, "Received SYN-ACK packet\n");
-                handshake = 0;
-            }
+            if (ret)
+                printf("Sending packet Retransmission SYN\n");
             else
-                error("ERROR: Could not receive SYN-ACK packet\n");
+                printf("Sending packet SYN\n");
+        }
+
+        // Time-out
+        FD_ZERO(&read_fds);
+        FD_SET(sockfd, &read_fds);
+
+        tv.tv_sec = 0;
+        tv.tv_usec = TIME_OUT * 1000;
+        rv = select(sockfd+1, &read_fds, NULL, NULL, &tv);
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
+            ret = 1;
+            continue;
+        }
+
+        // Receive SYN-ACK
+        if (recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
+            error("ERROR: Could not send SYN-ACK\n");
+
+        if (SYN) {
+            printf("Receiving packet SYN-ACK\n");
+            handshakeSYN = 0;
+        }
+        else
+            ret = 1;
+    }
+
+    ret = 0;
+
+    while (request) {
+        if (sendTo(sockfd, filename, strlen(filename), (struct sockaddr *) &serv_addr, servlen, 1, 0, 0, 0) == RC_ERROR)
+            error("ERROR: Could not send request packet\n");
+        else {
+            if (ret)
+                printf("Sending packet 0 Retransmission\n");
+            else
+                printf("Sending packet 0\n");
+        }
+
+        memset(buffer, 0, PACKET_SIZE);
+
+        // Time-out
+        FD_ZERO(&read_fds);
+        FD_SET(sockfd, &read_fds);
+
+        tv.tv_sec = 0;
+        tv.tv_usec = TIME_OUT * 1000;
+        rv = select(sockfd+1, &read_fds, NULL, NULL, &tv);
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
+            ret = 1;
+            continue;
+        }
+
+        fp = fopen(fw, "wb"); // Using wb because we're not only opening text files
+        if (fp == NULL)
+            error("ERROR: Could not open write-to file\n");
+
+        while (!FIN) {
+            memset(buffer, 0, PACKET_SIZE);
+            if (recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
+                error("ERROR: Could not receive packets");
+
+            if (SYN && !FIN) {
+                request_break = 1;
+                break;
+            }
+            else if (!FIN)
+                printf("Receiving packet %i\n", SEQ);
+            else {
+                printf("Receiving packet %i FIN\n", SEQ);
+                SEQ += HEADER_SIZE;
+                SEQ %= MAX_SEQ_NO;
+                break;
+            }
+
+            int ACK = SEQ+size+HEADER_SIZE;
+            ACK %= MAX_SEQ_NO;
+
+            fseek(fp, start, SEEK_SET);
+            fwrite(buffer, sizeof(char), size, fp);
+
+            ret = add(listACK, ACK);
+            sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, ACK, 0, 0, 0);
+            if (ret)
+                printf("Sending packet %i Retransmission\n", ACK);
+            else
+                printf("Sending packet %i\n", ACK);
+        }
+
+        if (request_break) {
+            request_break = 0;
+            continue;
         }
     }
 
-    // Send ACK
-    // Send request packet
-    packetRequest.type = 'r';
-    packetRequest.SEQ = 0;
-    packetRequest.ACK = -1;
-    packetRequest.size = strlen(filename);
-    strcpy(packetRequest.data, filename);
+    while (handshakeFIN) {
+        // Send FIN
+        sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, SEQ, 0, 1, 0);
+        if (ret)
+            printf("Sending packet %i Retransmission FIN\n", SEQ);
+        else
+            printf("Sending packet %i\n FIN", SEQ);
 
-    if (sendto(sockfd, &packetRequest, sizeof(packetRequest), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
-        error("ERROR: Could not send request packet\n");
-    else
-        fprintf(stdout, "Sent request packet\n");
+        // Time-out
+        FD_ZERO(&read_fds);
+        FD_SET(sockfd, &read_fds);
 
-    fp = fopen(fw, "wb"); // Using wb because we're not only opening text files
-    if (fp == NULL)
-        error("ERROR: Could not open write-to file\n");
+        tv.tv_sec = 0;
+        tv.tv_usec = TIME_OUT * 1000;
+        rv = select(sockfd+1, &read_fds, NULL, NULL, &tv);
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
+            ret = 1;
+            continue;
+        }
 
-    // // Communication with server
-    // while(1) {
-        
-    // }
+        FIN = 0;
+        SYN = 1;
+        int retSEQ = -1;
 
-    // 3-Way Handshake
-    // Send FIN
-    handshake = 1;
-    FIN.type = 'f';
-    if (sendto(sockfd, &FIN, sizeof(FIN), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
-        error("ERROR: Could not initiate 3-Way Handshake (FIN-ACK)\n");
-    else
-        fprintf(stdout, "Sent FIN packet\n");
-    // Receive FIN-ACK
-    while (handshake) {
-        bzero((char *) &packetReceive, sizeof(packetReceive));
-        if (recvfrom(sockfd, &packetReceive, sizeof(packetReceive), 0, (struct sockaddr *) &serv_addr, (socklen_t *) &servlen) == RC_ERROR)
-            error("ERROR: FIN-ACK packet lost\n");
-        else {
-            if (packetReceive.type == 'f' && packetReceive.ACK == -1) {
-                fprintf(stdout, "Received FIN-ACK packet\n");
-                handshake = 0;
+        while (handshakeFINACK) {
+            recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &serv_addr, &servlen, &retSEQ, &SYN, &FIN, &start);
+            if (FIN && !SYN && retSEQ == SEQ)
+                handshakeFIN = 0;
+            else {
+                printf("Receiving packet %i\n", retSEQ);
+                ret = 1;
             }
+
+            handshakeFINACK = 0;
+        }
+
+        if (handshakeFIN)
+            continue;
+
+        printf("Receiving packet %i FIN-ACK\n", retSEQ);
+        int msec = 0;
+        clock_gettime(CLOCK_MONOTONIC_RAW, &time_start);
+
+        while (msec < TIME_OUT*4) {
+            // ACK the FIN
+            sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, (SEQ+HEADER_SIZE)%MAX_SEQ_NO, 0, 0, 0);
+            printf("Sending packet %i\n", SEQ);
+
+            clock_gettime(CLOCK_MONOTONIC_RAW, &time_end);
+            msec = (time_end.tv_sec-time_start.tv_sec)*1000 + (time_end.tv_nsec-time_start.tv_nsec)/1000000;
+            int timeout = TIME_OUT*4-msec;
+
+            if (timeout < 0)
+                break;
+
+            // Time-out
+            FD_ZERO(&read_fds);
+            FD_SET(sockfd, &read_fds);
+
+            tv.tv_sec = 0;
+            tv.tv_usec = TIME_OUT * 1000;
+            rv = select(sockfd+1, &read_fds, NULL, NULL, &tv);
+            if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
+                handshakeFIN = 0;
+                break;
+            }
+
+            recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start);
+            if (FIN && SYN && SEQ == retSEQ)
+                printf("Receiving packet %i FIN-ACK\n", retSEQ);
+            else if (FIN)
+                printf("Receiving packet %i FIN\n", SEQ);
             else
-                error("ERROR: Could not receive FIN-ACK packet\n");
+                printf("Receiving packet %i\n", SEQ);
         }
     }
-    // Send ACK
-    // Send request packet
-    ACK.type = 'a';
-    if (sendto(sockfd, &ACK, sizeof(ACK), 0, (struct sockaddr *) &serv_addr, servlen) == RC_ERROR)
-        error("ERROR: Could not send ACK packet\n");
-    fprintf(stdout, "ACK packet sent\n");
+
+    printf("Closing connection\n");
+
+    // Free variables
+    free(hostIP);
+
+    // Close everything
+    fclose(fp);
+    close(sockfd);
 
     return RC_SUCCESS;
-}
-
-// Helper functions
-void error(char *msg) {
-    perror(msg);
-    exit(RC_SUCCESS);
 }
