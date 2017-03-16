@@ -140,7 +140,7 @@ int main(int argc, char* argv[]) {
         if (recvFrom(sockfd, filename, (size_t *) &size, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
             error("ERROR: Could not receive request packet\n");
 
-        printf("File: %s\nHANDSHAKE", filename);
+        printf("SYN: %d\nSEQ: %d\n", SYN, SEQ);
         if (SYN || SEQ != 1)
             continue;
         else
@@ -207,6 +207,7 @@ int main(int argc, char* argv[]) {
             lengths[cur] = payload;
 
             cur++;
+            offset = basefile + cur * PAYLOAD_SIZE;
         } while (offset < filesize && cur < 5);
 
         msec = 0;
@@ -312,6 +313,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    printf("Got FIN\n");
+    
     // Send FIN
     while (handshakeFIN) {
         sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, base, 1, 1, 0);

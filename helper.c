@@ -14,7 +14,7 @@ int sendTo(int sockfd, char* buffer, size_t size, struct sockaddr *dest_addr, so
         return result;
 
     char* packetSend = malloc(packetSize);
-    memset(packetSend, 0, packetSize);
+    bzero(packetSend, packetSize);
 
     memcpy(packetSend + sizeof(int)*0, &size, sizeof(int));
     memcpy(packetSend + sizeof(int)*1, &SEQ, sizeof(int));
@@ -24,7 +24,7 @@ int sendTo(int sockfd, char* buffer, size_t size, struct sockaddr *dest_addr, so
     memcpy(packetSend + HEADER_SIZE, buffer, size);
 
     if ((result = sendto(sockfd, packetSend, packetSize, 0, dest_addr, destlen)) == RC_ERROR) 
-        perror("ERROR: Could not sendto\n");
+        // perror("ERROR: Could not sendto\n");
 
     free(packetSend);
 
@@ -36,8 +36,8 @@ int recvFrom(int sockfd, char* buffer, size_t* size, struct sockaddr *src_addr, 
     int packetSize = PACKET_SIZE;
 
     char* packetReceived = malloc(packetSize);
-    memset(packetReceived, 0, packetSize);
-    memset(buffer, 0, packetSize);
+    bzero(packetReceived, packetSize);
+    bzero(buffer, packetSize);
 
     if ((result = recvfrom(sockfd, packetReceived, packetSize, 0, src_addr, srclen)) == RC_ERROR)
         perror("ERROR: Could not recvfrom\n");

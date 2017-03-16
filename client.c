@@ -253,10 +253,14 @@ int main(int argc, char* argv[]) {
             }
 
             recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start);
-            if (FIN && SYN && SEQ == retSEQ)
+            if (FIN && SYN && SEQ == retSEQ) {
                 printf("Receiving packet %i FIN-ACK\n", retSEQ);
-            else if (FIN)
+                handshakeFINACK = 0;
+            }
+            else if (FIN) {
                 printf("Receiving packet %i FIN\n", SEQ);
+                handshakeFIN = 0;
+            }
             else
                 printf("Receiving packet %i\n", SEQ);
         }
