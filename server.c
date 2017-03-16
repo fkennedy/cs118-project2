@@ -26,7 +26,7 @@
 // Function headers
 void error(char* msg);
 
-int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags, 
+int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags, \
         struct sockaddr *src_addr, socklen_t *addrlen, char* fileBuffer, int* ack, int* fin, int* seqNum, int* ackChecksum, int* datasize);
 
 // Main
@@ -42,6 +42,7 @@ int main(int argc, char* argv[]) {
     int portno; // port number to listen on
     int opt; // setsockopt flag
     char buf[PACKET_SIZE];
+    char* fileBuffer;
 
     // Server
     struct sockaddr_in serv_addr; // server's address
@@ -54,7 +55,7 @@ int main(int argc, char* argv[]) {
     char *hostaddr; // client host address in dotted-decimal notation (IP address)
 
     // File vars
-    char* filename; // file name to open
+    char filename[PACKET_SIZE]; // file name to open
     FILE* fp;
     long filesize;
 
@@ -130,12 +131,12 @@ int main(int argc, char* argv[]) {
             timeoutInterval.tv_sec = TIMEOUT_SECS;
             timeoutInterval.tv_usec = TIMEOUT_USECS;
 
-            if ((currAcksReceived = select(sockfd + 1, &set, NULL, NULL, &timeout)) < 1)
+            if ((currAcksReceived = select(sockfd + 1, &set, NULL, NULL, &timeoutInterval)) < 1)
                 error("ERROR: time out waiting for ACK from client");
 
             // Get the ACK
-            if (recvfromwithheaders(sockfd, buf, PACKET_SIZE, (struct sockaddr *) &cli_addr, &clilen,
-                    &ack, &fin, &seqNum, &ackChecksum, &datasize) < 0)
+            if (recvfromwithheaders(sockfd, buf, PACKET_SIZE, 0, (struct sockaddr *) &cli_addr, &clilen, \
+                    fileBuffer, &ack, &fin, &seqNum, &ackChecksum, &datasize) < 0)
                 error("ERROR: getting ACK");
 
             // Corrupted ack
@@ -172,7 +173,7 @@ void error(char *msg) {
     exit(RC_EXIT);
 }
 
-int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags, 
+int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags, \
         struct sockaddr *src_addr, socklen_t *addrlen, char* fileBuffer, int* ack, int* fin, int* seqNum, int* ackChecksum, int* datasize) {
     
     int numBytesReceived;

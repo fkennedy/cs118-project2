@@ -23,10 +23,10 @@
 // Function headers
 void error(char * msg);
 
-ssize_t sendtowithheaders(int sockfd, const void *buf, size_t len, int flags,
-               const struct sockaddr *dest_addr, socklen_t addrlen);
+ssize_t sendtowithheaders(int sockfd, const void *buf, size_t len, int flags, \
+               const struct sockaddr *dest_addr, socklen_t addrlen, int* ack, int* fin, int* seqNum, int* ackChecksum, int* datasize);
 
-int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags, 
+int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags, \
         struct sockaddr *src_addr, socklen_t *addrlen, char* fileBuffer, int* ack, int* fin, int* seqNum, int* ackChecksum, int* datasize);
 
 // Main
@@ -54,6 +54,7 @@ int main(int argc, char* argv[]) {
     portno = atoi(argv[2]);
     // Get file name
     filename = argv[3];
+    printf("hostname: %s, portno: %d, filename: %s\n", hostname, portno, filename);
 
     // Set server info
     memset(&serverinfo, 0, servlen);
@@ -86,6 +87,7 @@ int main(int argc, char* argv[]) {
     int ackChecksum = 0;
     int datasize = 0;
     int expectedSeqNum = 0;
+    int seqNum = 0;
 
     while (!fin) {
         if ((numBytesReceived = recvfromwithheaders(sockfd, fileBuffer, PACKET_SIZE, 0, 
@@ -99,8 +101,8 @@ int main(int argc, char* argv[]) {
 
         // Finished
         if (fin) {
-            if ((sendtowithheaders(sockfd, filename, strlen(filename), 0, (const struct sockaddr *) &serverinfo, servlen,
-                    &ack, &fin, &expectedSeqNum, &ackChecksum)) == RC_ERROR)
+            if ((sendtowithheaders(sockfd, filename, strlen(filename), 0, (const struct sockaddr *) &serverinfo, servlen, \
+                    &ack, &fin, &expectedSeqNum, &ackChecksum, &datasize)) == RC_ERROR)
                 error("ERROR: sending response to server.");
         }
 
@@ -113,14 +115,14 @@ int main(int argc, char* argv[]) {
         // Packet received normally
         else {
             if ((sendtowithheaders(sockfd, filename, strlen(filename), 0, (const struct sockaddr *) &serverinfo, servlen,
-                    &ack, &fin, &expectedSeqNum, &ackChecksum)) == RC_ERROR)
+                    &ack, &fin, &expectedSeqNum, &ackChecksum, &datasize)) == RC_ERROR)
                 error("ERROR: sending ACK to server.");
 
             expectedSeqNum += PACKET_SIZE;
         }
 
         // Write fileBuffer to file
-        if (fwrite(fileBuffer, sizeof(char), datasize, fp) < 0)
+        if (fwrite(fileBuffer, sizeof(char), datasize, fp) <= 0)
             error("ERROR: could not write to file.");
     }
 
@@ -135,7 +137,7 @@ void error(char *msg) {
     exit(RC_ERROR);
 }
 
-ssize_t sendtowithheaders(int sockfd, const void *buf, size_t len, int flags,
+ssize_t sendtowithheaders(int sockfd, const void *buf, size_t len, int flags, \
                const struct sockaddr *dest_addr, socklen_t addrlen, int* ack, int* fin, int* seqNum, int* ackChecksum, int* datasize) {
 
     // Packet stucture: 
@@ -145,8 +147,9 @@ ssize_t sendtowithheaders(int sockfd, const void *buf, size_t len, int flags,
     char* traverse = packetBuffer;
     int traverseIndex = 0;
 
-    datasize = strlen(buf);
-    ackChecksum = ~ack;
+    *datasize = strlen(buf);
+    int ackContains = *ack;
+    *ackChecksum = ~ackContains;
 
     memcpy(traverse + traverseIndex, &ack, sizeof(ack));
     traverseIndex += sizeof(ack);   
@@ -169,7 +172,7 @@ ssize_t sendtowithheaders(int sockfd, const void *buf, size_t len, int flags,
     return *datasize;  
 }
 
-int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags, 
+int recvfromwithheaders(int sockfd, void *buf, size_t len, int flags, \
         struct sockaddr *src_addr, socklen_t *addrlen, char* fileBuffer, int* ack, int* fin, int* seqNum, int* ackChecksum, int* datasize) {
     
     int numBytesReceived;
