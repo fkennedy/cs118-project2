@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
     // Declare variables
     int rc; // return code
     int sockfd; // socket
-    char* portno; // port number to listen on
+    int portno; // port number to listen on
     char* hostname; // hostname
     char* filename;
 
@@ -56,17 +56,22 @@ int main(int argc, char* argv[]) {
     serverinfo.sin_family = AF_INET;
     serverinfo.sin_port = htons(portno);
     
-    if ((inet_aton("127.0.0.1", &serverinfo.sin_addr.s_addr)) == 0)
+    if ((inet_aton("127.0.0.1", (struct in_addr *) &serverinfo.sin_addr.s_addr)) == 0)
         error("ERROR: could not convert addr");
+    else
+        printf("Addr converted\n");
 
     // Create a socket
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == RC_ERROR)
         error("ERROR: could not create a socket.");
+    else
+        printf("Socket created\n");
 
     // Send file name
-    if ((sendto(sockfd, filename, strlen(filename), 0, &serverinfo, sizeof(serverinfo))) == RC_ERROR) {
+    if ((sendto(sockfd, filename, strlen(filename), 0, (const struct sockaddr *) &serverinfo, sizeof(serverinfo))) == RC_ERROR)
         error("ERROR: Failed to send filename.");
-    }
+    else
+        printf("File name sent\n");
 
     return RC_SUCCESS;
 }
