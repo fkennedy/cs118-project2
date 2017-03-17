@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
     // File stuff
     char* filename; // filename argument
     FILE* fp;
-    char* fw = "data.log";
+    char* fw = "received.data";
 
     // Timeout intervals
     fd_set read_fds;
