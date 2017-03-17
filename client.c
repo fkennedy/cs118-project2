@@ -29,11 +29,11 @@ int main(int argc, char* argv[]) {
         ACKs[i] = -1;
 
     // While flags
-    int handshakeSYN = 1;
-    int request = 1;
-    int request_break = 0;
-    int handshakeFIN = 1;
-    int handshakeFINACK = 1;
+    int handshakeSYN;
+    int request;
+    int request_break;
+    int handshakeFIN;
+    int handshakeFINACK;
 
     // File stuff
     char* filename; // filename argument
@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) {
     if (portno < 0)
         error("ERROR: invalid port number");
 
-    /*----- Setup server socekt -----*/
+    /*----- Setup server socket -----*/
 
     // Get host name
     hostIP = strcmp(argv[1], "localhost") == 0 ? "127.0.0.1" : strcpy(hostIP, argv[1]);
@@ -85,6 +85,7 @@ int main(int argc, char* argv[]) {
 
     /*----- Transmit packets -----*/
 
+    handshakeSYN = 1;
     // SYN/SYN-ACK Handshake
     while (handshakeSYN) {
         // Send SYN
@@ -127,6 +128,7 @@ int main(int argc, char* argv[]) {
 
     ret = 0;
 
+    request = 1;
     while (request) {
         if (sendTo(sockfd, filename, strlen(filename), (struct sockaddr *) &serv_addr, servlen, 1, 0, 0, 0) == RC_ERROR)
             error("ERROR: Could not send request packet\n");
@@ -164,6 +166,7 @@ int main(int argc, char* argv[]) {
             if (recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
                 error("ERROR: Could not receive packets");
 
+            request_break = 0;
             if (SYN && !FIN) {
                 request_break = 1;
                 break;
@@ -203,6 +206,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    handshakeFIN = 1;
     while (handshakeFIN) {
         // Send FIN
         if((sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, SEQ, 0, 1, 0)) == RC_ERROR)
@@ -230,6 +234,7 @@ int main(int argc, char* argv[]) {
         SYN = 1;
         int retSEQ = -1;
 
+        handshakeFINACK = 1;
         while (handshakeFINACK) {
             if((recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &retSEQ, &SYN, &FIN, &start)) == RC_ERROR)
                 error("ERROR: could not recvfrom socket");
