@@ -52,11 +52,11 @@ int main(int argc, char* argv[]) {
     struct timespec current;
 
     // Loop/Jump flags stuff
-    int handshakeSYNACK = 1;
-    int handshakeFIN = 1;
-    int FINsent = 1;
-    int handshakeFINACK = 1;
-    int timeout = 0;
+    int handshakeSYNACK;
+    int handshakeFIN;
+    int FINsent;
+    int handshakeFINACK;
+    int timeout;
     int i;
 
     // File stuff
@@ -116,9 +116,10 @@ int main(int argc, char* argv[]) {
     printf("Receiving packet %i %i SYN\n", SEQ, WINDOW_SIZE);
 
     ret = 0;
+    handshakeSYNACK = 1;
 
     // Send SYN-ACK
-    while(handshakeSYNACK) {
+    while (handshakeSYNACK) {
         if (sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, SEQ, 1, 0, 0) == RC_ERROR)
             error("ERROR: Could not send SYN-ACK\n");
         else {
@@ -147,8 +148,6 @@ int main(int argc, char* argv[]) {
         else
             handshakeSYNACK = 0;
     }
-
-    printf("File: %s\n", filename);
 
     // Open the file
     fp = fopen(filename, "rb"); // Using rb because we're not only opening text files
@@ -228,6 +227,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        timeout = 0;
         if (oldestTime > TIME_OUT)
             timeout = 1;
 
@@ -309,6 +309,7 @@ int main(int argc, char* argv[]) {
                 lengths[4] = -1;
             }
 
+            FINsent = 1;
             if (basefile >= filesize) {
                 FIN = 1;
                 sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, base, 1, FIN, 0);
@@ -322,6 +323,8 @@ int main(int argc, char* argv[]) {
         }
     }
     
+    handshakeFIN = 1;
+
     // Send FIN
     while (handshakeFIN) {
         if (FINsent) {
@@ -359,8 +362,10 @@ int main(int argc, char* argv[]) {
     ret = 0;
 
 FINACK:
+    handshakeFINACK = 1;
+
     // Send FIN-ACK
-    while(handshakeFINACK) {
+    while (handshakeFINACK) {
         int SEQnew = (base+HEADER_SIZE)%MAX_SEQ_NO;
         sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, SEQnew, 0, 1, 0);
         

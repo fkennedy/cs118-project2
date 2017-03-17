@@ -126,7 +126,7 @@ int main(int argc, char* argv[]) {
             error("ERROR: Could not send request packet\n");
         else {
             if (ret)
-                printf("Sending packet 0 Retransmission %s of size %lu\n", filename, strlen(filename));
+                printf("Sending packet 0 Retransmission\n");
             else
                 printf("Sending packet 0 %s\n", filename);
         }
