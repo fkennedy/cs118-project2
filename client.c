@@ -2,17 +2,19 @@
 
 // Main
 int main(int argc, char* argv[]) {
-    // Declare variables
+    /*------ Variables -------*/
+
+    // Client
     int sockfd; // socket
     int portno; // port number to listen on
-    char* hostIP = malloc(50);
 
     // Server
+    char* hostIP = malloc(50);
     struct sockaddr_in serv_addr; // server's address
     socklen_t servlen; // byte size of server's address
     struct hostent *server; // server host info
 
-    // Packet
+    // Packet data
     char buffer[PACKET_SIZE]; // buffer
     int size = 0; // size of packet
     int SEQ = 0; // sequence number
@@ -21,7 +23,7 @@ int main(int argc, char* argv[]) {
     int FIN = 0; // FIN flag
     unsigned int start = 0;
 
-    // ACK
+    // ACKs
     int * ACKs = (int *) malloc(sizeof(int) * 10);
     for (int i = 0; i < 10; i++)
         ACKs[i] = -1;
@@ -38,40 +40,38 @@ int main(int argc, char* argv[]) {
     FILE* fp;
     char* fw = "data.log";
 
-    // Time out stuff
+    // Timeout intervals
     fd_set read_fds;
     struct timeval tv;
     int rv;
 
+    struct timespec time_start, time_end;
+
+    /*----- Validate args ------*/
+
     // Validate args
     if (argc != 4) {
         printf("Usage: %s <hostname> <port> <filename>\n", argv[0]);
-        exit(RC_SUCCESS);
+        exit(RC_ERROR);
     }
 
-    struct timespec time_start, time_end;
-
-    // Get host name
-    if (strcmp(argv[1], "localhost") == 0)
-        hostIP = "127.0.0.1";
-    else
-        strcpy(hostIP, argv[1]);
-
-    // Get port number
-    if (portno < 0)
-        error("ERROR: Invalid port number\n");
-    else
-        portno = atoi(argv[2]);
-
-    // Get file name
+    // Get arguments
+    portno = atoi(argv[2]);
     filename = argv[3];
 
-    printf("hostname: %s, portno: %d, filename: %s\n", hostIP, portno, filename);
+    if (portno < 0)
+        error("ERROR: invalid port number");
+
+    /*----- Setup server socekt -----*/
+
+    // Get host name
+    hostIP = strcmp(argv[1], "localhost") == 0 ? "127.0.0.1" : strcpy(hostIP, argv[1]);
+
+    fprintf(stderr, "hostname: %s, portno: %d, filename: %s\n", hostIP, portno, filename);
 
     // Create parent socket
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == RC_ERROR)
         error("ERROR: Could not open socket\n");
-
     
     // Build server's internet address
     bzero((char *) &serv_addr, sizeof(serv_addr));
@@ -82,6 +82,8 @@ int main(int argc, char* argv[]) {
     servlen = sizeof(serv_addr);
 
     ret = 0;
+
+    /*----- Transmit packets -----*/
 
     // SYN/SYN-ACK Handshake
     while (handshakeSYN) {
@@ -95,28 +97,32 @@ int main(int argc, char* argv[]) {
                 printf("Sending packet SYN\n");
         }
 
-        // Time-out
+        // Create a timeout interval
         FD_ZERO(&read_fds);
         FD_SET(sockfd, &read_fds);
 
         tv.tv_sec = 0;
         tv.tv_usec = TIME_OUT * 1000;
-        rv = select(sockfd+1, &read_fds, NULL, NULL, &tv);
-        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
-            ret = 1;
-            continue;
+
+        // Wait for message to come in from socket
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == RC_ERROR) {
+            fprintf(stderr, "TIMEOUT: packet timed out.");
+            ret = 1; // Retransmit packet if timeoute
         }
 
         // Receive SYN-ACK
-        if (recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
-            error("ERROR: Could not send SYN-ACK\n");
+        else if (recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
+            error("ERROR: Could not receive SYN-ACK\n");
 
-        if (SYN) {
+        else if (SYN) {
             printf("Receiving packet SYN-ACK\n");
             handshakeSYN = 0;
         }
-        else
+
+        else {
+            fprintf(stderr, "ERROR: Did not receive expected packet, retransmitting.");
             ret = 1;
+        }
     }
 
     ret = 0;
@@ -124,6 +130,7 @@ int main(int argc, char* argv[]) {
     while (request) {
         if (sendTo(sockfd, filename, strlen(filename), (struct sockaddr *) &serv_addr, servlen, 1, 0, 0, 0) == RC_ERROR)
             error("ERROR: Could not send request packet\n");
+
         else {
             if (ret)
                 printf("Sending packet 0 Retransmission\n");
@@ -133,34 +140,38 @@ int main(int argc, char* argv[]) {
 
         memset(buffer, 0, PACKET_SIZE);
 
-        // Time-out
+        // Timeout interval
         FD_ZERO(&read_fds);
         FD_SET(sockfd, &read_fds);
 
         tv.tv_sec = 0;
         tv.tv_usec = TIME_OUT * 1000;
-        rv = select(sockfd+1, &read_fds, NULL, NULL, &tv);
-        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
+
+        // Wait for message from socket
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == RC_ERROR) {
+            fprintf(stderr, "TIMEOUT: packet timed out.");
             ret = 1;
             continue;
         }
 
-        fp = fopen(fw, "wb"); // Using wb because we're not only opening text files
-        if (fp == NULL)
+        // Open file for writing
+        if ((fp = fopen(fw, "wb")) == NULL)
             error("ERROR: Could not open write-to file\n");
 
         while (!FIN) {
             memset(buffer, 0, PACKET_SIZE);
+
             if (recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
                 error("ERROR: Could not receive packets");
 
             if (SYN && !FIN) {
                 request_break = 1;
                 break;
-            }
-            else if (!FIN)
+            
+            } else if (!FIN) {
                 printf("Receiving packet %i\n", SEQ);
-            else {
+            
+            } else {
                 printf("Receiving packet %i FIN\n", SEQ);
                 request = 0;
                 SEQ += HEADER_SIZE;
@@ -168,14 +179,18 @@ int main(int argc, char* argv[]) {
                 break;
             }
 
-            int ACK = SEQ+size+HEADER_SIZE;
+            // Change next ACK
+            int ACK = SEQ + size + HEADER_SIZE;
             ACK %= MAX_SEQ_NO;
 
             fseek(fp, start, SEEK_SET);
             fwrite(buffer, sizeof(char), size, fp);
 
             ret = add(ACKs, ACK);
-            sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, ACK, 0, 0, 0);
+
+            if((sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, ACK, 0, 0, 0)) == RC_ERROR)
+                error("ERROR: could not send to socket.");
+
             if (ret)
                 printf("Sending packet %i Retransmission\n", ACK);
             else
@@ -190,20 +205,23 @@ int main(int argc, char* argv[]) {
 
     while (handshakeFIN) {
         // Send FIN
-        sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, SEQ, 0, 1, 0);
+        if((sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, SEQ, 0, 1, 0)) == RC_ERROR)
+            error("ERROR: could not send to socket.");        
         if (ret)
             printf("Sending packet %i Retransmission FIN\n", SEQ);
         else
             printf("Sending packet %i FIN\n", SEQ);
 
-        // Time-out
+        // Timeout interval
         FD_ZERO(&read_fds);
         FD_SET(sockfd, &read_fds);
 
         tv.tv_sec = 0;
         tv.tv_usec = TIME_OUT * 1000;
-        rv = select(sockfd+1, &read_fds, NULL, NULL, &tv);
-        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
+        
+        // Wait for message from socket
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == RC_ERROR) {
+            fprintf(stderr, "TIMEOUT: packet timed out");
             ret = 1;
             continue;
         }
@@ -213,7 +231,9 @@ int main(int argc, char* argv[]) {
         int retSEQ = -1;
 
         while (handshakeFINACK) {
-            recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &retSEQ, &SYN, &FIN, &start);
+            if((recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &retSEQ, &SYN, &FIN, &start)) == RC_ERROR)
+                error("ERROR: could not recvfrom socket");
+            
             if (FIN && !SYN && retSEQ == SEQ)
                 handshakeFIN = 0;
             else {
@@ -233,7 +253,9 @@ int main(int argc, char* argv[]) {
 
         while (msec < TIME_OUT*4) {
             // ACK the FIN
-            sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, (SEQ+HEADER_SIZE)%MAX_SEQ_NO, 0, 0, 0);
+            if((sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, (SEQ+HEADER_SIZE)%MAX_SEQ_NO, 0, 0, 0)) == RC_ERROR)
+                error("ERROR: could not send to socket");
+
             printf("Sending packet %i\n", SEQ);
 
             clock_gettime(CLOCK_MONOTONIC_RAW, &time_end);
@@ -243,19 +265,23 @@ int main(int argc, char* argv[]) {
             if (timeout < 0)
                 break;
 
-            // Time-out
+            // Timeout interval
             FD_ZERO(&read_fds);
             FD_SET(sockfd, &read_fds);
 
             tv.tv_sec = 0;
             tv.tv_usec = TIME_OUT * 1000;
-            rv = select(sockfd+1, &read_fds, NULL, NULL, &tv);
-            if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
+            
+            // Wait for message from socket
+            if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == RC_ERROR) {
+                fprintf(stderr, "TIMEOUT: packet timed out");
                 handshakeFIN = 0;
                 break;
             }
 
-            recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start);
+            if ((recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start)) == RC_ERROR)
+                error("ERROR: could not recvfrom socket");
+
             if (FIN && SYN && SEQ == retSEQ) {
                 printf("Receiving packet %i FIN-ACK\n", retSEQ);
                 handshakeFINACK = 0;
@@ -277,3 +303,6 @@ int main(int argc, char* argv[]) {
 
     return RC_SUCCESS;
 }
+
+
+//    
