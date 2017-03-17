@@ -73,7 +73,7 @@ int main(int argc, char* argv[]) {
     // Validate args
     if (argc != 2) {
         fprintf(stderr,"Usage: %s <port>\n", argv[0]);
-        exit(RC_EXIT);
+        exit(0);
     }
 
     // Get port number
@@ -151,8 +151,10 @@ int main(int argc, char* argv[]) {
 
     // Open the file
     fp = fopen(filename, "rb"); // Using rb because we're not only opening text files
-    if (fp  == NULL)
+    if (fp  == NULL) {
+        sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, SEQ, 0, 1, 0);
         error("ERROR: Could not open file\n");
+    }
 
     // Get filesize
     fseek(fp, 0, SEEK_END);
@@ -160,8 +162,10 @@ int main(int argc, char* argv[]) {
     fseek(fp, 0, SEEK_SET);
 
     // Empty file
-    if (filesize == 0)
+    if (filesize == 0) {
+        sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, SEQ, 0, 1, 0);
         error("ERROR: File is empty\n");
+    }
 
     // Store file contents into data
     data = malloc(filesize+1);
@@ -231,6 +235,15 @@ int main(int argc, char* argv[]) {
         if (oldestTime > TIME_OUT)
             timeout = 1;
 
+        // Time-out
+        FD_ZERO(&read_fds);
+        FD_SET(sockfd, &read_fds);
+
+        tv.tv_sec = 0;
+        tv.tv_usec = TIME_OUT*1000;
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0)
+            timeout = 1;
+
         if (timeout) {
             // Retransmit timed out packages
             msec = 0;
@@ -246,7 +259,7 @@ int main(int argc, char* argv[]) {
                         payload = lengths[i];
 
                         char packetSend[payload];
-                        bzero(packetSend, payload);
+                        memset(packetSend, 0, payload);
                         memcpy(packetSend, data+temp, payload);
 
                         sendTo(sockfd, packetSend, payload, (struct sockaddr *) &cli_addr, clilen, SEQ, 0, 0, temp);
@@ -258,6 +271,8 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
+
+
         else {
             int retlen = 0;
             int retSEQ = 0;
@@ -348,7 +363,6 @@ int main(int argc, char* argv[]) {
 
         if (recvFrom(sockfd, filename, &size, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
             error("ERROR: Could not receive FIN packet\n");
-
 
         if (FIN && SEQ == (base+HEADER_SIZE)%MAX_SEQ_NO) {
             handshakeFIN = 0;

@@ -3,7 +3,7 @@
 // Helper functions
 void error(char* msg) {
     perror(msg);
-    exit(RC_EXIT);
+    exit(0);
 }
 
 int sendTo(int sockfd, char* buffer, size_t size, struct sockaddr *dest_addr, socklen_t destlen, int SEQ, int SYN, int FIN, unsigned int start) {

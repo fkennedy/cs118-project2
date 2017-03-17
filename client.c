@@ -24,8 +24,9 @@ int main(int argc, char* argv[]) {
     unsigned int start = 0;
 
     // ACKs
+    int i;
     int * ACKs = (int *) malloc(sizeof(int) * 10);
-    for (int i = 0; i < 10; i++)
+    for (i = 0; i < 10; i++)
         ACKs[i] = -1;
 
     // While flags
@@ -52,7 +53,7 @@ int main(int argc, char* argv[]) {
     // Validate args
     if (argc != 4) {
         printf("Usage: %s <hostname> <port> <filename>\n", argv[0]);
-        exit(RC_ERROR);
+        exit(0);
     }
 
     // Get arguments
@@ -106,20 +107,18 @@ int main(int argc, char* argv[]) {
         tv.tv_usec = TIME_OUT * 1000;
 
         // Wait for message to come in from socket
-        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == RC_ERROR) {
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
             fprintf(stderr, "TIMEOUT: packet timed out.");
             ret = 1; // Retransmit packet if timeoute
         }
-
         // Receive SYN-ACK
         else if (recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
             error("ERROR: Could not receive SYN-ACK\n");
 
-        else if (SYN) {
+        if (SYN && !SEQ && !size) {
             printf("Receiving packet SYN-ACK\n");
             handshakeSYN = 0;
         }
-
         else {
             fprintf(stderr, "ERROR: Did not receive expected packet, retransmitting.");
             ret = 1;
@@ -127,7 +126,6 @@ int main(int argc, char* argv[]) {
     }
 
     ret = 0;
-
     request = 1;
     while (request) {
         if (sendTo(sockfd, filename, strlen(filename), (struct sockaddr *) &serv_addr, servlen, 1, 0, 0, 0) == RC_ERROR)
@@ -137,9 +135,10 @@ int main(int argc, char* argv[]) {
             if (ret)
                 printf("Sending packet 0 Retransmission\n");
             else
-                printf("Sending packet 0 %s\n", filename);
+                printf("Sending packet 0\n");
         }
 
+        ret = 1;
         memset(buffer, 0, PACKET_SIZE);
 
         // Timeout interval
@@ -150,7 +149,7 @@ int main(int argc, char* argv[]) {
         tv.tv_usec = TIME_OUT * 1000;
 
         // Wait for message from socket
-        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == RC_ERROR) {
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
             fprintf(stderr, "TIMEOUT: packet timed out.");
             ret = 1;
             continue;
@@ -171,10 +170,10 @@ int main(int argc, char* argv[]) {
                 request_break = 1;
                 break;
             
-            } else if (!FIN) {
+            }
+            else if (!FIN)
                 printf("Receiving packet %i\n", SEQ);
-            
-            } else {
+            else {
                 printf("Receiving packet %i FIN\n", SEQ);
                 request = 0;
                 SEQ += HEADER_SIZE;
@@ -201,11 +200,12 @@ int main(int argc, char* argv[]) {
         }
 
         if (request_break) {
-            request_break = 0;
+            request = 0;
             continue;
         }
     }
 
+    ret = 0;
     handshakeFIN = 1;
     while (handshakeFIN) {
         // Send FIN
@@ -224,7 +224,7 @@ int main(int argc, char* argv[]) {
         tv.tv_usec = TIME_OUT * 1000;
         
         // Wait for message from socket
-        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == RC_ERROR) {
+        if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
             fprintf(stderr, "TIMEOUT: packet timed out");
             ret = 1;
             continue;
@@ -278,8 +278,7 @@ int main(int argc, char* argv[]) {
             tv.tv_usec = TIME_OUT * 1000;
             
             // Wait for message from socket
-            if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == RC_ERROR) {
-                fprintf(stderr, "TIMEOUT: packet timed out");
+            if ((rv = select(sockfd+1, &read_fds, NULL, NULL, &tv)) == 0) {
                 handshakeFIN = 0;
                 break;
             }
@@ -308,6 +307,3 @@ int main(int argc, char* argv[]) {
 
     return RC_SUCCESS;
 }
-
-
-//    

@@ -16,8 +16,7 @@
 #include <time.h>
 
 // Return codes
-#define RC_SUCCESS  0
-#define RC_EXIT     1
+#define RC_SUCCESS  1
 #define RC_ERROR    -1
 
 // Constants

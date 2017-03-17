@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g
+CFLAGS = -lrt
 REMOVE = rm -rf
 TARGET = project2
 FILES = README.md Makefile *.c *.h
@@ -8,17 +8,25 @@ FILES = README.md Makefile *.c *.h
 
 default: clean server client
 
+mac: clean server-mac client-mac
+
 server: server.o
-	$(CC) $(CFLAGS) server.c helper.c -o server
+	$(CC) server.c helper.c -o server $(CFLAGS)
+
+server-mac: server.o
+	$(CC) server.c helper.c -o server
 
 client: client.o
-	$(CC) $(CFLAGS) client.c helper.c -o client
+	$(CC) client.c helper.c -o client $(CFLAGS)
+
+client-mac: client.o
+	$(CC) client.c helper.c -o client
 
 clean:
 	$(REMOVE) client server
 	$(REMOVE) *.dSYM
 	$(REMOVE) *.o
-	$(REMOVE) data.log
+	$(REMOVE) received.data
 	$(REMOVE) *.tar.gz
 
 dist: default

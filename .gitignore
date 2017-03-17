@@ -1,6 +1,6 @@
 server
 client
-data.log
+received.data
 *.o
 *.dSYM
 *.tar.gz
