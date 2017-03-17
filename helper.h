@@ -21,17 +21,17 @@
 #define RC_ERROR    -1
 
 // Constants
-#define MAX_SEQ_NO  30720
+#define MAX_SEQ_NO 30720
 #define WINDOW_SIZE 5120
-#define TIME_OUT    500
+#define TIME_OUT 500
 #define HEADER_SIZE 20
 #define PACKET_SIZE 1024
 #define PAYLOAD_SIZE 1004
 
 // Function headers
 void error(char* msg);
-int sendTo(int sockfd, char* buffer, size_t size, struct sockaddr *dest_addr, socklen_t destlen, int SEQ, int syn, int fin, unsigned int start);
-int recvFrom(int sockfd, char* buffer, size_t* size, struct sockaddr *src_addr, socklen_t *srclen, int* SEQ, int* syn, int* fin, unsigned int* start);
+int sendTo(int sockfd, char* buffer, size_t size, struct sockaddr *dest_addr, socklen_t destlen, int SEQ, int SIN, int FIN, unsigned int start);
+int recvFrom(int sockfd, char* buffer, int* size, struct sockaddr *src_addr, socklen_t *srclen, int* SEQ, int* SIN, int* FIN, unsigned int* start);
 int add(int* list, int ACK);
 
 #endif

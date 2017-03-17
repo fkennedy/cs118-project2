@@ -22,9 +22,9 @@ int main(int argc, char* argv[]) {
     unsigned int start = 0;
 
     // ACK
-    int * listACK = (int *) malloc(sizeof(int) * 10);
+    int * ACKs = (int *) malloc(sizeof(int) * 10);
     for (int i = 0; i < 10; i++)
-        listACK[i] = -1;
+        ACKs[i] = -1;
 
     // While flags
     int handshakeSYN = 1;
@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
 
     // Validate args
     if (argc != 4) {
-        fprintf(stderr, "Usage: %s <hostname> <port> <filename>\n", argv[0]);
+        printf("Usage: %s <hostname> <port> <filename>\n", argv[0]);
         exit(RC_SUCCESS);
     }
 
@@ -65,6 +65,8 @@ int main(int argc, char* argv[]) {
 
     // Get file name
     filename = argv[3];
+
+    printf("hostname: %s, portno: %d, filename: %s\n", hostIP, portno, filename);
 
     // Create parent socket
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == RC_ERROR)
@@ -106,7 +108,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Receive SYN-ACK
-        if (recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
+        if (recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
             error("ERROR: Could not send SYN-ACK\n");
 
         if (SYN) {
@@ -124,9 +126,9 @@ int main(int argc, char* argv[]) {
             error("ERROR: Could not send request packet\n");
         else {
             if (ret)
-                printf("Sending packet 0 Retransmission\n");
+                printf("Sending packet 0 Retransmission %s of size %lu\n", filename, strlen(filename));
             else
-                printf("Sending packet 0\n");
+                printf("Sending packet 0 %s\n", filename);
         }
 
         memset(buffer, 0, PACKET_SIZE);
@@ -149,7 +151,7 @@ int main(int argc, char* argv[]) {
 
         while (!FIN) {
             memset(buffer, 0, PACKET_SIZE);
-            if (recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
+            if (recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
                 error("ERROR: Could not receive packets");
 
             if (SYN && !FIN) {
@@ -160,6 +162,7 @@ int main(int argc, char* argv[]) {
                 printf("Receiving packet %i\n", SEQ);
             else {
                 printf("Receiving packet %i FIN\n", SEQ);
+                request = 0;
                 SEQ += HEADER_SIZE;
                 SEQ %= MAX_SEQ_NO;
                 break;
@@ -171,7 +174,7 @@ int main(int argc, char* argv[]) {
             fseek(fp, start, SEEK_SET);
             fwrite(buffer, sizeof(char), size, fp);
 
-            ret = add(listACK, ACK);
+            ret = add(ACKs, ACK);
             sendTo(sockfd, buffer, 0, (struct sockaddr *) &serv_addr, servlen, ACK, 0, 0, 0);
             if (ret)
                 printf("Sending packet %i Retransmission\n", ACK);
@@ -191,7 +194,7 @@ int main(int argc, char* argv[]) {
         if (ret)
             printf("Sending packet %i Retransmission FIN\n", SEQ);
         else
-            printf("Sending packet %i\n FIN", SEQ);
+            printf("Sending packet %i FIN\n", SEQ);
 
         // Time-out
         FD_ZERO(&read_fds);
@@ -210,7 +213,7 @@ int main(int argc, char* argv[]) {
         int retSEQ = -1;
 
         while (handshakeFINACK) {
-            recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &serv_addr, &servlen, &retSEQ, &SYN, &FIN, &start);
+            recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &retSEQ, &SYN, &FIN, &start);
             if (FIN && !SYN && retSEQ == SEQ)
                 handshakeFIN = 0;
             else {
@@ -252,7 +255,7 @@ int main(int argc, char* argv[]) {
                 break;
             }
 
-            recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start);
+            recvFrom(sockfd, buffer, &size, (struct sockaddr *) &serv_addr, &servlen, &SEQ, &SYN, &FIN, &start);
             if (FIN && SYN && SEQ == retSEQ) {
                 printf("Receiving packet %i FIN-ACK\n", retSEQ);
                 handshakeFINACK = 0;
@@ -267,9 +270,6 @@ int main(int argc, char* argv[]) {
     }
 
     printf("Closing connection\n");
-
-    // Free variables
-    free(hostIP);
 
     // Close everything
     fclose(fp);

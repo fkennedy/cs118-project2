@@ -3,3 +3,4 @@ client
 data.log
 *.o
 *.dSYM
+*.tar.gz

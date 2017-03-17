@@ -1,10 +1,12 @@
 CC = gcc
 CFLAGS = -g
 REMOVE = rm -rf
+TARGET = project2
+FILES = README.md Makefile *.c *.h
 
 .SILENT:
 
-default: server client
+default: clean server client
 
 server: server.o
 	$(CC) $(CFLAGS) server.c helper.c -o server
@@ -17,3 +19,7 @@ clean:
 	$(REMOVE) *.dSYM
 	$(REMOVE) *.o
 	$(REMOVE) data.log
+	$(REMOVE) *.tar.gz
+
+dist: default
+	tar -cvzf $(TARGET).tar.gz $(FILES)

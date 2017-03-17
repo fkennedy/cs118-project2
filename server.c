@@ -54,6 +54,7 @@ int main(int argc, char* argv[]) {
     // Loop/Jump flags stuff
     int handshakeSYNACK = 1;
     int handshakeFIN = 1;
+    int FINsent = 1;
     int handshakeFINACK = 1;
     int timeout = 0;
     int i;
@@ -101,18 +102,19 @@ int main(int argc, char* argv[]) {
 
     clilen = sizeof(cli_addr);
 
-    printf("Waiting for client...\n");
+    printf("Server listening on port %d...\n", portno);
 
     // SYN/SYN-ACK Handshake
     // Receive packet from the client
-    while (SYN != 1) {
+    while (!SYN) {
         // Receive SYN
-        if (recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
+        if (recvFrom(sockfd, buffer, &size, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
             error("ERROR: Could not receive SYN packet\n");
     }
     
     printf("Client: %s:%d\n", inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
     printf("Receiving packet %i %i SYN\n", SEQ, WINDOW_SIZE);
+
     ret = 0;
 
     // Send SYN-ACK
@@ -137,11 +139,10 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        if (recvFrom(sockfd, filename, (size_t *) &size, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
+        if (recvFrom(sockfd, filename, &size, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
             error("ERROR: Could not receive request packet\n");
 
-        printf("SYN: %d\nSEQ: %d\n", SYN, SEQ);
-        if (SYN || SEQ != 1)
+        if (SYN || !size)
             continue;
         else
             handshakeSYNACK = 0;
@@ -180,9 +181,10 @@ int main(int argc, char* argv[]) {
     ret = 0;
 
     while (!FIN) {
-        // Send packets in current window
-        do {
-            offset = basefile+cur+PAYLOAD_SIZE;
+        offset = basefile + cur * PAYLOAD_SIZE;
+        // Send packets
+        while (offset < filesize && cur < 5) {
+            
             // Calculate sequence number
             SEQ = (base+cur*PACKET_SIZE) % MAX_SEQ_NO;
 
@@ -208,7 +210,7 @@ int main(int argc, char* argv[]) {
 
             cur++;
             offset = basefile + cur * PAYLOAD_SIZE;
-        } while (offset < filesize && cur < 5);
+        }
 
         msec = 0;
         clock_gettime(CLOCK_MONOTONIC_RAW, &current);
@@ -216,7 +218,7 @@ int main(int argc, char* argv[]) {
         oldestTime = -1;
 
         for (i = 0; i < 5; i++) {
-            if (SEQs[i] == -1 && ACKed[i] -1) {
+            if (SEQs[i] != -1 && ACKed[i] == -1) {
                 msec = (current.tv_sec-timers[i].tv_sec)*1000 + (current.tv_nsec-timers[i].tv_nsec)/1000000;
 
                 if (msec > oldestTime) {
@@ -257,17 +259,23 @@ int main(int argc, char* argv[]) {
             }
         }
         else {
-            int retlen, retSEQ, retSYN, retFIN;
-            recvFrom(sockfd, buffer, (size_t *) &retlen, (struct sockaddr *) &cli_addr, &clilen, &retSEQ, &retSYN, &retFIN, &start);
+            int retlen = 0;
+            int retSEQ = 0;
+            int retSYN = 0;
+            int retFIN = 0;
+
+            recvFrom(sockfd, buffer, &retlen, (struct sockaddr *) &cli_addr, &clilen, &retSEQ, &retSYN, &retFIN, &start);
+            
             FIN = retFIN;
             SEQ = retSEQ;
+            
             if (FIN) {
                 ret = 0;
-                printf("Receiving packet %i FIN", SEQ);
+                printf("Receiving packet %i FIN\n", SEQ);
                 goto FINACK;
             }
             else
-                printf("Receiving packet %i", retSEQ);
+                printf("Receiving packet %i\n", retSEQ);
 
             for (i = 0; i < 5; i++) {
                 if (ACKs[i] == SEQ) {
@@ -277,7 +285,7 @@ int main(int argc, char* argv[]) {
             }
 
             while (ACKed[0] != -1) {
-                basefile = locations[0];
+                basefile = locations_next[0];
                 ACKsReceived++;
                 payloadLen = lengths[0];
                 base = ACKs[0];
@@ -305,6 +313,7 @@ int main(int argc, char* argv[]) {
                 FIN = 1;
                 sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, base, 1, FIN, 0);
                 printf("Sending packet %i %i FIN\n", base, WINDOW_SIZE);
+                FINsent = 0;
                 ret = 0;
             }
 
@@ -312,17 +321,17 @@ int main(int argc, char* argv[]) {
                 break;
         }
     }
-
-    printf("Got FIN\n");
     
     // Send FIN
     while (handshakeFIN) {
-        sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, base, 1, 1, 0);
-        if (ret)
-            printf("Sending packet %i %i Retransmission FIN\n", base, WINDOW_SIZE);
-        else
-            printf("Sending packet %i %i FIN\n", base, WINDOW_SIZE);
-
+        if (FINsent) {
+            sendTo(sockfd, buffer, 0, (struct sockaddr *) &cli_addr, clilen, base, 1, 1, 0);
+            if (ret)
+                printf("Sending packet %i %i Retransmission FIN\n", base, WINDOW_SIZE);
+            else
+                printf("Sending packet %i %i FIN\n", base, WINDOW_SIZE);
+        }
+            
         // Time-out
         FD_ZERO(&read_fds);
         FD_SET(sockfd, &read_fds);
@@ -334,7 +343,7 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        if (recvFrom(sockfd, filename, (size_t *) &size, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
+        if (recvFrom(sockfd, filename, &size, (struct sockaddr *) &cli_addr, (socklen_t *) &clilen, &SEQ, &SYN, &FIN, &start) == RC_ERROR)
             error("ERROR: Could not receive FIN packet\n");
 
 
@@ -372,7 +381,7 @@ FINACK:
         }
 
         // Last ACK
-        recvFrom(sockfd, buffer, (size_t *) &size, (struct sockaddr *) &cli_addr, &clilen, &SEQ, &SYN, &FIN, &start);
+        recvFrom(sockfd, buffer, &size, (struct sockaddr *) &cli_addr, &clilen, &SEQ, &SYN, &FIN, &start);
         if (SEQ != (SEQnew+HEADER_SIZE)%MAX_SEQ_NO)
             continue;
         else
