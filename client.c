@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
 
     // ACKs
     int i;
-    int * ACKs = (int *) malloc(sizeof(int) * 10);
+    int ACKs[10];
     for (i = 0; i < 10; i++)
         ACKs[i] = -1;
 

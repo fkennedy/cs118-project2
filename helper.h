@@ -27,7 +27,18 @@
 #define PACKET_SIZE 1024
 #define PAYLOAD_SIZE 1004
 
+struct packet {
+    unsigned int location;
+    unsigned int location_next;
+    int SEQ;
+    int ACK;
+    int ACKed;
+    int length;
+    struct timespec timer;
+};
+
 // Function headers
+void intHandler(int sig);
 void error(char* msg);
 int sendTo(int sockfd, char* buffer, size_t size, struct sockaddr *dest_addr, socklen_t destlen, int SEQ, int SIN, int FIN, unsigned int start);
 int recvFrom(int sockfd, char* buffer, int* size, struct sockaddr *src_addr, socklen_t *srclen, int* SEQ, int* SIN, int* FIN, unsigned int* start);
