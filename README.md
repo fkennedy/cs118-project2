@@ -2,32 +2,35 @@
 
 ## Authors
 
-* Frederick Kennedy (404667930)
-* Johnathan Estacio (404491851)
+* Frederick Kennedy (404667930) Discussion 1D
+    * Worked on the server
+* Johnathan Estacio (404491851) Discussion 1B
+    * Worked on the client and the report
 
 ## Getting started
-### Files
+### Source code
 * server.c - C source code for server
 * client.c - C source code for client
-* packet.h - Header file for a packet
+* helper.h - Header file for helper.c and all the necessary information needed for both server and client
+* helper.c - C source code for helper functions
+* Makefile - Makefile of the project
+        
+### Files
+* image.jpg - File of size > MB
+* spec.pdf  - File of size > KB
+* test.html - File of size > B
+* report.pdf - Report of the project
 
 ### Building the program
 To build the server and client programs:
 ```
     make
 ```
-To build the server program:
-```
-    make server
-```
-To build the client program:
-```
-    make client
-```
 To clean up the directory:
 ```
     make clean
 ```
+To create a tarball
 
 ### Running the program
 To run the server:
@@ -36,7 +39,7 @@ To run the server:
 ```
 To run the client:
 ```
-    ./client <port number> <host name> <file name>
+    ./client <host name> <port number> <file name>
 ```
 
 ## Notes
@@ -50,4 +53,3 @@ To run the client:
 * [_fopen(2)_](https://linux.die.net/man/3/fopen)
 * [_fread(3)_](http://man7.org/linux/man-pages/man3/fread.3.html)
 * [_memset(3)_](http://man7.org/linux/man-pages/man3/memset.3.html)
-* [do...while](https://www.tutorialspoint.com/cprogramming/c_do_while_loop.htm)

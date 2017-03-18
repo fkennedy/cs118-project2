@@ -3,4 +3,5 @@ client
 received.data
 *.o
 *.dSYM
-*.tar.gz
+*.tar
+README

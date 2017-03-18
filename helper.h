@@ -33,7 +33,7 @@ struct packet {
     int SEQ;
     int ACK;
     int ACKed;
-    int length;
+    int size;
     struct timespec timer;
 };
 

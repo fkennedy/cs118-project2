@@ -2,7 +2,9 @@ CC = gcc
 CFLAGS = -lrt
 REMOVE = rm -rf
 TARGET = project2
-FILES = README.md Makefile *.c *.h
+UID1 = 404667930
+UID2 = 404491851
+FILES = README Makefile *.c *.h report.pdf
 
 .SILENT:
 
@@ -27,7 +29,10 @@ clean:
 	$(REMOVE) *.dSYM
 	$(REMOVE) *.o
 	$(REMOVE) received.data
-	$(REMOVE) *.tar.gz
+	$(REMOVE) *.tar
 
 dist: default
-	tar -cvzf $(TARGET).tar.gz $(FILES)
+	tar -cvzf $(TARGET)_$(UID1)_$(UID2).tar $(FILES)
+
+dist-mac: mac
+	tar -cvzf $(TARGET)_$(UID1)_$(UID2).tar $(FILES)

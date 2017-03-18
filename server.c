@@ -173,7 +173,7 @@ int main(int argc, char* argv[]) {
             packet[i].SEQ = -1;
             packet[i].ACK = -1;
             packet[i].ACKed = -1;
-            packet[i].length = -1;
+            packet[i].size = -1;
         }
 
         ret = 0;
@@ -204,7 +204,7 @@ int main(int argc, char* argv[]) {
                 packet[cur].SEQ = SEQ;
                 packet[cur].ACK = (SEQ+payload+HEADER_SIZE) % MAX_SEQ_NO;
                 packet[cur].ACKed = -1;
-                packet[cur].length = payload;
+                packet[cur].size = payload;
 
                 cur++;
                 offset = basefile + cur * PAYLOAD_SIZE;
@@ -251,7 +251,7 @@ int main(int argc, char* argv[]) {
                         if (msec >= TIME_OUT) {
                             SEQ = packet[i].SEQ;
                             temp = packet[i].location;
-                            payload = packet[i].length;
+                            payload = packet[i].size;
 
                             char packetSend[payload];
                             memset(packetSend, 0, payload);
@@ -296,7 +296,7 @@ int main(int argc, char* argv[]) {
                 while (packet[0].ACKed != -1) {
                     basefile = packet[0].location_next;
                     ACKsReceived++;
-                    payloadLen = packet[0].length;
+                    payloadLen = packet[0].size;
                     base = packet[0].ACK;
                     cur--;
 
@@ -307,7 +307,7 @@ int main(int argc, char* argv[]) {
                             packet[i].SEQ = -1;
                             packet[i].ACK = -1;
                             packet[i].ACKed = -1;
-                            packet[i].length = -1;
+                            packet[i].size = -1;
                         }
                         else {
                             packet[i].location = packet[i+1].location;
@@ -315,7 +315,7 @@ int main(int argc, char* argv[]) {
                             packet[i].SEQ = packet[i+1].SEQ;
                             packet[i].ACK = packet[i+1].ACK;
                             packet[i].ACKed = packet[i+1].ACKed;
-                            packet[i].length = packet[i+1].length;
+                            packet[i].size = packet[i+1].size;
                             packet[i].timer = packet[i+1].timer;
                         }   
                     }

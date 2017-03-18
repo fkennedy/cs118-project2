@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
     /*----- Setup server socket -----*/
 
     // Get host name
-    hostIP = strcmp(argv[1], "localhost") == 0 ? "127.0.0.1" : strcpy(hostIP, argv[1]);
+    hostIP = strcmp(argv[1], "localhost") == 0 ? "127.0.0.1" : argv[1];
 
     fprintf(stderr, "hostname: %s, portno: %d, filename: %s\n", hostIP, portno, filename);
 
